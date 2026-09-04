@@ -1,0 +1,23 @@
+# Line endings are normalised to LF in history and checked out native.
+#
+# Without this, a Windows clone rewrites every text file's endings on checkout and then reports
+# the whole tree as modified — which is exactly what `git add` warned about on the first commit.
+* text=auto eol=lf
+
+# Shell scripts must keep LF even on Windows: CRLF makes the shebang line unparseable.
+*.sh text eol=lf
+
+# Generated, but committed on purpose. Collapsed in review so a dependency bump does not bury
+# the change it came with.
+package-lock.json linguist-generated=true -diff
+
+# Never line-ending-normalise these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.db binary

@@ -1,0 +1,64 @@
+{
+  "name": "relayn",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Relayn — one API key for every frontier model. AI gateway + usage dashboard.",
+  "scripts": {
+    "dev": "next dev -p 3200",
+    "build": "prisma generate && next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "start": "next start -p 3200",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "db:sync": "node scripts/sync-schemas.mjs",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:reset": "prisma migrate reset --force",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "admin:promote": "tsx scripts/promote-admin.ts",
+    "models:sync": "tsx --conditions=react-server scripts/sync-models.ts",
+    "payments:verify": "tsx --conditions=react-server scripts/verify-payments.ts",
+    "payments:verify-crypto": "tsx --conditions=react-server scripts/verify-crypto-payments.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "bash scripts/e2e-smoke.sh"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.0"
+  },
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "7.9.1",
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "better-sqlite3": "12.6.0",
+    "next": "16.3.1",
+    "pg": "8.16.3",
+    "qrcode": "1.5.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "recharts": "3.10.1",
+    "server-only": "^0.0.1",
+    "undici": "8.10.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "26.2.0",
+    "@types/pg": "8.15.5",
+    "@types/qrcode": "1.5.5",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "dotenv": "17.4.2",
+    "prisma": "7.9.1",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

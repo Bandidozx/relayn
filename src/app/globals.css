@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+/*
+ * Relayn design tokens.
+ *
+ * One dark "instrument panel" palette, defined once here and consumed everywhere as
+ * Tailwind utilities (bg-surface, text-ink-muted, border-line, …). Component files never
+ * hardcode a hex value, so a re-theme is a single-file change.
+ *
+ * Fonts are deliberately system stacks rather than a webfont download: the app must build
+ * and run in an offline environment.
+ */
+@theme {
+  /* Surfaces, darkest to lightest */
+  --color-canvas: #06080b;
+  --color-surface: #0a0e14;
+  --color-raised: #101620;
+  --color-hover: #151d29;
+
+  /* Hairlines */
+  --color-line: #1a2230;
+  --color-line-strong: #27313f;
+
+  /* Text */
+  --color-ink: #eaeef6;
+  --color-ink-muted: #93a0b4;
+  --color-ink-faint: #5f6b7d;
+
+  /* Brand + semantic accents */
+  --color-brand: #3fdcb6;
+  --color-brand-strong: #1fc79d;
+  --color-brand-ink: #04120e;
+  --color-violet: #8e7cff;
+  --color-amber: #f2b657;
+  --color-rose: #ff6b7a;
+  --color-sky: #58b6ff;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+  --font-mono:
+    ui-monospace, "JetBrains Mono", "SFMono-Regular", "Cascadia Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --radius-card: 0.875rem;
+
+  --shadow-panel: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 24px 60px -20px rgb(0 0 0 / 0.75);
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-rise: rise 0.22s ease-out;
+  --animate-fade: fade 0.16s ease-out;
+  --animate-spin-slow: spin 0.9s linear infinite;
+}
+
+@keyframes shimmer {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Visible, consistent keyboard focus everywhere — accessibility requirement. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-brand) 30%, transparent);
+    color: var(--color-ink);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-canvas);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 999px;
+    border: 2px solid var(--color-canvas);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-faint);
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Charts inherit the token palette rather than Recharts' defaults. */
+  .recharts-cartesian-axis-tick text {
+    fill: var(--color-ink-faint);
+    font-size: 11px;
+  }
+  .recharts-cartesian-grid line {
+    stroke: var(--color-line);
+  }
+}
+
+@utility panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-panel);
+}
+
+/* Faint grid backdrop used behind marketing + auth screens. */
+@utility grid-backdrop {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.022) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+@utility numeric {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}

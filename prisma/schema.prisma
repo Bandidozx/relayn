@@ -1,0 +1,454 @@
+// Relayn — AI API gateway platform
+// Canonical schema. This file targets SQLite (zero-infra local development).
+// The PostgreSQL production mirror lives in prisma/schema.postgres.prisma and is
+// selected with PRISMA_SCHEMA=prisma/schema.postgres.prisma (see README).
+//
+// Portability rules kept deliberately: no native enums, no Json columns, no scalar
+// lists, no Decimal. Money is stored as integer micro-USD, never floats.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// Platform account.
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  /// NULL for accounts that only ever signed in through an identity provider. Such an
+  /// account has no password to verify, which is why every credential check treats NULL
+  /// as "never matches" rather than as an empty password.
+  passwordHash    String?
+  avatarUrl       String?
+  /// "user" | "admin"
+  role            String    @default("user")
+  /// "active" | "suspended" | "deleted"
+  status          String    @default("active")
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sessions      Session[]
+  apiKeys       ApiKey[]
+  usageLogs     UsageLog[]
+  subscription  Subscription?
+  integrations  Integration[]
+  tickets       SupportTicket[]
+  verifications VerificationToken[]
+  auditLogs     AuditLog[]
+  oauthAccounts OAuthAccount[]
+  payments      Payment[]
+
+  @@index([status])
+  @@map("users")
+}
+
+/// A third-party identity linked to a platform account.
+///
+/// Keyed on the provider's immutable subject id, never on the email: an address can be
+/// reassigned or changed upstream, so matching on it would eventually hand one person's
+/// account to another. The email is stored only for display.
+model OAuthAccount {
+  id             String    @id @default(cuid())
+  userId         String
+  /// "google" — one row per provider per user.
+  provider       String
+  /// The provider's `sub` claim.
+  providerUserId String
+  email          String?
+  /// Snapshot of what the provider said at link time; useful when support has to explain
+  /// why an account exists.
+  displayName    String?
+  createdAt      DateTime  @default(now())
+  lastLoginAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+/// Server-side session. Only a SHA-256 hash of the session token is stored.
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Single-use token for email verification and password reset (hash only).
+model VerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  /// "email_verify" | "password_reset"
+  type      String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("verification_tokens")
+}
+
+/// API credential. The secret is shown once at creation and never stored in plaintext.
+model ApiKey {
+  id           String    @id @default(cuid())
+  userId       String
+  name         String
+  /// SHA-256 of the full secret.
+  keyHash      String    @unique
+  /// e.g. "rly_live" — safe to display.
+  keyPrefix    String
+  /// Last 4 characters of the secret — safe to display.
+  last4        String
+  /// "active" | "revoked"
+  status       String    @default("active")
+  requestCount Int       @default(0)
+  totalTokens  Int       @default(0)
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageLogs UsageLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("api_keys")
+}
+
+/// Model catalogue entry. Prices are USD per 1M tokens.
+model AiModel {
+  id              String   @id @default(cuid())
+  /// Public API identifier, e.g. "claude-opus-5".
+  modelId         String   @unique
+  name            String
+  provider        String
+  /// "chat" | "reasoning" | "coding" | "vision" | "embeddings"
+  category        String   @default("chat")
+  description     String   @default("")
+  contextWindow   Int      @default(0)
+  maxOutputTokens Int      @default(0)
+  inputPrice      Float    @default(0)
+  outputPrice     Float    @default(0)
+  /// Comma-separated capability slugs, e.g. "vision,tools,streaming".
+  capabilities    String   @default("")
+  /// Minimum plan required to call this model: free | pro | business | enterprise
+  minPlan         String   @default("free")
+  enabled         Boolean  @default(true)
+  /// Identifier sent upstream when it differs from modelId.
+  upstreamModel   String?
+  /// Ordered, comma-separated catalogue ids to retry when this model's upstream fails
+  /// transiently (429/5xx/timeout). Empty means no fallback — the failure is returned as-is.
+  fallbacks       String   @default("")
+  /// True when an operator created this row by hand rather than the catalogue sync. Sync
+  /// leaves these alone, and only these may be deleted from the dashboard.
+  manual          Boolean  @default(false)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([provider])
+  @@map("models")
+}
+
+/// One row per inbound gateway request — the single source of truth for all metrics.
+model UsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  apiKeyId     String?
+  /// Public model identifier that was requested.
+  modelId      String
+  provider     String   @default("")
+  endpoint     String
+  requestId    String   @unique
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  latencyMs    Int      @default(0)
+  /// "success" | "error"
+  status       String
+  httpStatus   Int      @default(200)
+  errorCode    String?
+  errorMessage String?
+  /// Billed amount in micro-USD (1_000_000 = $1).
+  costMicroUsd Int      @default(0)
+  streamed     Boolean  @default(false)
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([apiKeyId])
+  @@index([status])
+  @@index([modelId])
+  @@map("usage_logs")
+}
+
+/// Plan + token allocation. One per user.
+///
+/// Two shapes live in this table. A metered subscription has `unlimited = false` and a
+/// `renewalDate` that `ensureSubscription` rolls forward monthly to zero `tokensUsed`. A
+/// permanently unlimited subscription — bought once, never renewed — has `unlimited = true`
+/// and `planExpiresAt = null`, and is never rolled over or downgraded by any scheduled path.
+model Subscription {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  /// "free" | "pro" | "business" | "enterprise" | "unlimited"
+  plan            String    @default("free")
+  /// "active" | "past_due" | "canceled". Never "expired": the gateway rejects every status
+  /// other than "active", so an expiry marker here would 402-lock the account outright.
+  status          String    @default("active")
+  tokenAllocation Int       @default(250000)
+  tokensUsed      Int       @default(0)
+  /// True once a signature-verified payment granted uncapped tokens. This flag — not the
+  /// allocation, and not the plan string — is what `quotaFrom` reads. No user-facing endpoint
+  /// may set it; only `applyVerifiedPayment` does.
+  unlimited       Boolean   @default(false)
+  /// When the current plan stops applying. NULL means "does not expire", which is the only
+  /// valid value for permanent unlimited access.
+  planExpiresAt   DateTime?
+  /// Reserved for a future recurring processor. Never a secret.
+  externalRef     String?
+  /// Start of the next monthly token window for metered plans. Not a plan expiry date, and
+  /// not consulted for unlimited accounts.
+  renewalDate     DateTime
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([unlimited])
+  @@map("subscriptions")
+}
+
+/// A one-time payment for permanent unlimited access.
+///
+/// Rows are created by `POST /api/payments/checkout` with a server-decided `plan` and
+/// `amount` — neither is ever read from a request body. `appliedAt` is the idempotency
+/// marker: the callback handler flips `pending -> paid` with a conditional UPDATE and only
+/// touches the subscription when that UPDATE affected exactly one row, so a provider
+/// replaying the same callback cannot activate twice.
+model Payment {
+  id            String    @id @default(cuid())
+  userId        String
+  /// Our own merchant reference. Sent to the provider as `merchant_ref` and echoed back in
+  /// the callback, which is how a callback is bound to one specific user's order.
+  orderId       String    @unique
+  /// Registry id of the PaymentProvider that owns this order, e.g. "tripay".
+  provider      String
+  /// Provider-side transaction reference. NULL until the provider accepts the order.
+  reference     String?
+  /// Payment channel code, e.g. "QRIS".
+  method        String    @default("QRIS")
+  /// Plan this payment grants once verified. Server-decided.
+  plan          String
+  /// Amount owed, in the smallest unit of `currency`. Server-decided; a callback or an
+  /// on-chain transfer must match or exceed it. Whole rupiah for QRIS, micro-USD for crypto.
+  amount        Int
+  /// Amount the provider reported as actually settled. NULL until paid.
+  paidAmount    Int?
+  /// "pending" | "paid" | "failed" | "expired" | "refund"
+  status        String    @default("pending")
+  /// Raw QRIS payload (EMVCo string). Rendered into a QR client-side. Not a secret — it is
+  /// what the payer's banking app scans — but it is scoped to the owning user's session.
+  qrString      String?
+  /// Provider-hosted checkout page, kept as a fallback when a QR cannot be scanned.
+  checkoutUrl   String?
+  expiresAt     DateTime?
+  paidAt        DateTime?
+  /// When the subscription was actually flipped to unlimited. NULL means "not yet applied".
+  appliedAt     DateTime?
+  /// Why a callback was refused, for the audit trail. Never holds a credential.
+  failureReason String?
+
+  // ── On-chain columns. NULL on every fiat row; populated only by the crypto flow. ──────
+  //
+  // Every one of these is written from what the RPC node returned, never from the request
+  // body. The client supplies `txHash` and nothing else, and even that is re-read from the
+  // chain before any of the neighbouring columns are filled in.
+
+  /// Unit `amount` is denominated in: "IDR" (whole rupiah) or "USD_MICRO" (millionths).
+  currency      String    @default("IDR")
+  /// Chain slug, e.g. "base". NULL on fiat rows.
+  network       String?
+  /// Asset symbol actually demanded, e.g. "USDC". NULL on fiat rows.
+  asset         String?
+  /// Transaction hash, lowercased. The UNIQUE index here *is* the double-spend defence:
+  /// two accounts submitting the same hash race on this constraint and exactly one wins.
+  txHash        String?   @unique
+  /// Receiving address the transfer had to land on, as configured at verification time.
+  recipient     String?
+  /// Payer address, read from the transfer event. Recorded for support, never trusted.
+  sender        String?
+  /// Amount observed on-chain, in the asset's smallest unit, as a decimal string. A string
+  /// because 10^18-scale values overflow both `Int` (int4) and IEEE-754 doubles.
+  amountRaw     String?
+  /// Minimum amount required at verification time, same units as `amountRaw`.
+  amountRequired String?
+  /// Confirmations counted at the moment of verification.
+  confirmations Int?
+  /// Block the transaction was mined in, as a string for the same reason as `amountRaw`.
+  blockNumber   String?
+  /// When the chain data was read and accepted. Distinct from `appliedAt`, which records
+  /// when the subscription was flipped.
+  verifiedAt    DateTime?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One row per provider reference. NULLs compare as distinct on both SQLite and
+  /// PostgreSQL, so any number of orders may sit unreferenced while still pending.
+  @@unique([provider, reference])
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("payments")
+}
+
+/// A saved client integration (Cursor, SDK snippet, custom base URL, ...).
+model Integration {
+  id            String    @id @default(cuid())
+  userId        String
+  /// Slug from lib/integrations catalogue, e.g. "openai-sdk-python".
+  type          String
+  name          String
+  /// JSON-encoded, non-secret configuration.
+  configuration String    @default("{}")
+  apiKeyId      String?
+  createdAt     DateTime  @default(now())
+  lastUsedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("integrations")
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String
+  subject   String
+  /// "billing" | "technical" | "account" | "other"
+  category  String   @default("technical")
+  /// "low" | "normal" | "high"
+  priority  String   @default("normal")
+  message   String
+  /// "open" | "pending" | "resolved" | "closed"
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages TicketMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  /// "user" | "admin"
+  authorRole String   @default("user")
+  body       String
+  createdAt  DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+/// Append-only security/administrative trail.
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  actorEmail String?
+  action     String
+  targetType String?
+  targetId   String?
+  /// JSON-encoded metadata. Never contains secrets.
+  metadata   String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+/// Upstream provider settings.
+///
+/// Two kinds of row live here. A **builtin** row (`custom = false`) only annotates a provider
+/// that is compiled into the registry from env — its credential is in `process.env` and
+/// `apiKeyCipher` stays null. A **custom** row (`custom = true`) *is* the provider: it was added
+/// from Admin → Providers at runtime and carries its own sealed credential, because an operator
+/// adding a reseller upstream cannot edit the deployment's environment.
+///
+/// `apiKeyCipher` is AES-256-GCM output from `lib/security/secret-box`, never plaintext, and is
+/// never serialised into an API response. `apiKeyHint` is the only part that goes to the browser:
+/// the last four characters, enough to tell two keys apart and useless on its own.
+model ProviderConfig {
+  id        String   @id @default(cuid())
+  /// "openai" | "anthropic" | "google" | "openrouter" | "mock", or a custom slug.
+  provider  String   @unique
+  label     String
+  baseUrl   String?
+  enabled   Boolean  @default(true)
+  /// Upstream dialect: "openai" (OpenAI-compatible) or "anthropic" (Messages API).
+  kind      String   @default("openai")
+  /// Sealed credential for custom providers. Null for builtins, whose key comes from env.
+  apiKeyCipher String?
+  /// Last four characters of the credential, for display. Never the whole value.
+  apiKeyHint String  @default("")
+  /// JSON object of extra request headers some gateways require. "" means none.
+  extraHeaders String @default("")
+  /// True when this row defines a runtime-added provider rather than annotating a builtin.
+  custom    Boolean  @default(false)
+  /// Sealed newline-separated outbound proxy URLs for this upstream's traffic. Rotated
+  /// round-robin per request. Sealed because a proxy URL usually carries user:password.
+  proxyCipher String?
+  /// Redacted display form, e.g. "http://user@1.2.3.4:8080 +2 more". Never the password.
+  proxyHint String  @default("")
+  /// Name of the env var holding a builtin's credential. "" for custom providers.
+  envVar    String
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([custom, enabled])
+  @@map("provider_configs")
+}

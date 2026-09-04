@@ -1,0 +1,37 @@
+node_modules
+.next
+out
+build
+next-env.d.ts
+
+# local env
+.env
+.env.local
+
+# sqlite dev database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# generated prisma client
+/src/generated
+
+# editor / tooling noise
+.DS_Store
+*.tsbuildinfo
+.vitest
+/skills-lock.json
+/.windsurf
+/.agents
+/.claude/skills
+
+.vercel
+.env*
+# The one env file that belongs in the repo: it documents every required variable and holds
+# no real values. It has to be re-admitted explicitly because `.env*` above catches it.
+!.env.example
+
+# Zero-byte leftover from a stray shell redirect. Brackets are a character class in gitignore,
+# so they are escaped; unescaped, this line would ignore any single-letter file named S/E/N/I/T/V.
+\[SENSITIVE\]

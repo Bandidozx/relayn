@@ -1,0 +1,24 @@
+# Files not needed to build or run the app on Vercel.
+# (dev.db is also covered by .gitignore, but be explicit: a SQLite file must never
+# reach a serverless deployment, where its writes would silently disappear.)
+dev.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+tests
+vitest.config.mts
+scripts/e2e-smoke.sh
+
+# Local environment files must never ship. Every value the deployment needs comes from the
+# Vercel project's environment variables; an uploaded .env (which points DATABASE_URL at
+# the SQLite dev file) could only shadow them or confuse a build.
+.env
+.env.*
+!.env.example
+
+.claude
+.agents
+.windsurf
+skills-lock.json
