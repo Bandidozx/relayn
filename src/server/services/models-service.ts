@@ -46,6 +46,20 @@ export function splitCapabilities(value: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Drops the sentence `syncProviderCatalogue` used to write for every model it discovered.
+ *
+ * It was byte-identical on every synced card, which turned the catalogue grid into a wall of
+ * grey prose, and its second half — "pricing and tier are editable in Admin → Models" — is an
+ * operator instruction with no business on a user-facing page. The generator no longer writes
+ * it, but rows created before that change still carry it, so it is filtered on read rather than
+ * migrated: a description an operator typed themselves has to survive untouched, and matching
+ * the exact generated sentence is the only reliable way to tell the two apart.
+ */
+export function visibleDescription(value: string): string {
+  return value.includes("Discovered by catalogue sync") ? "" : value.trim();
+}
+
 export async function listModelsForUser(userId: string): Promise<ModelCatalogue> {
   const subscription = await getRequestSubscription(userId);
   const plan = subscription.plan;
@@ -61,7 +75,7 @@ export async function listModelsForUser(userId: string): Promise<ModelCatalogue>
     name: row.name,
     provider: row.provider,
     category: row.category,
-    description: row.description,
+    description: visibleDescription(row.description),
     contextWindow: row.contextWindow,
     maxOutputTokens: row.maxOutputTokens,
     inputPrice: row.inputPrice,

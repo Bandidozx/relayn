@@ -15,7 +15,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 import { formatLimit, formatPricePerMillion, titleCase } from "@/lib/format";
+import { resolveVendor } from "@/lib/vendor";
 import type { ModelCatalogue } from "@/server/services/models-service";
+import { VendorMark } from "./vendor-mark";
 
 const CATEGORY_TONES: Record<string, "brand" | "violet" | "sky" | "amber" | "neutral"> = {
   chat: "brand",
@@ -131,85 +133,122 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
         </div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-          {models.map((model) => (
-            <article
-              key={model.id}
-              className={cn(
-                "panel flex flex-col gap-3 p-4 transition-colors",
-                model.available ? "hover:border-line-strong" : "opacity-75",
-              )}
-            >
-              <header className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="truncate text-sm font-semibold text-ink">{model.name}</h3>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <code className="numeric truncate text-[11px] text-ink-faint">
-                      {model.modelId}
-                    </code>
-                    <CopyButton
-                      value={model.modelId}
-                      compact
-                      label={`Copy ${model.modelId}`}
-                      toastMessage="Model id copied"
-                    />
-                  </div>
-                </div>
-                <Badge tone={CATEGORY_TONES[model.category] ?? "neutral"}>
-                  {titleCase(model.category)}
-                </Badge>
-              </header>
-
-              <p className="text-xs leading-relaxed text-ink-muted">{model.description}</p>
-
-              {model.capabilities.length > 0 ? (
-                <ul className="flex flex-wrap gap-1">
-                  {model.capabilities.map((capability) => (
-                    <li
-                      key={capability}
-                      className="rounded-md border border-line bg-raised/60 px-1.5 py-0.5 text-[10.5px] text-ink-faint"
-                    >
-                      {capability}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-ink-faint">Context</dt>
-                  <dd className="numeric text-ink">{formatLimit(model.contextWindow)}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-ink-faint">Max out</dt>
-                  <dd className="numeric text-ink">{formatLimit(model.maxOutputTokens)}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-ink-faint">Input</dt>
-                  <dd className="numeric text-ink">{formatPricePerMillion(model.inputPrice)}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-ink-faint">Output</dt>
-                  <dd className="numeric text-ink">{formatPricePerMillion(model.outputPrice)}</dd>
-                </div>
-              </dl>
-
-              <footer className="mt-auto flex items-center justify-between gap-2 border-t border-line pt-3">
-                <span className="text-[11px] text-ink-faint">{titleCase(model.provider)}</span>
-                {model.available ? (
-                  <Badge tone="brand" dot>
-                    Available
-                  </Badge>
-                ) : (
-                  <Link
-                    href="/subscription"
-                    className="rounded-lg border border-amber/35 bg-amber/10 px-2 py-1 text-[11px] text-amber transition-opacity hover:opacity-85"
-                  >
-                    Needs {model.minPlanName}
-                  </Link>
+          {models.map((model) => {
+            const vendor = resolveVendor(model.modelId, model.provider);
+            const routedVia = titleCase(model.provider);
+            return (
+              <article
+                key={model.id}
+                className={cn(
+                  "panel relative flex flex-col gap-3 p-4 transition-colors",
+                  model.available ? "hover:border-line-strong" : "opacity-75",
                 )}
-              </footer>
-            </article>
-          ))}
+              >
+                {/*
+                 * Status stripe along the top edge.
+                 *
+                 * It encodes the only status this page actually knows — whether the caller's plan
+                 * may call the model. Per-model provider health is not measured anywhere, so there
+                 * is deliberately no "degraded" state to draw; inventing one would be a made-up
+                 * number wearing a colour.
+                 *
+                 * The radius is the card's minus its 1px border so the stripe follows the inner
+                 * corner. That avoids `overflow-hidden` on the card, which would clip the copy
+                 * button's toast.
+                 */}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "absolute inset-x-0 top-0 h-[3px] rounded-t-[calc(var(--radius-card)-1px)]",
+                    model.available ? "bg-brand/70" : "bg-amber/70",
+                  )}
+                />
+
+                <header className="flex items-start gap-3">
+                  <VendorMark vendor={vendor} />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate text-sm font-semibold text-ink">{model.name}</h3>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <code className="numeric truncate text-[11px] text-ink-faint">
+                        {model.modelId}
+                      </code>
+                      <CopyButton
+                        value={model.modelId}
+                        compact
+                        label={`Copy ${model.modelId}`}
+                        toastMessage="Model id copied"
+                      />
+                    </div>
+                  </div>
+                  <Badge tone={CATEGORY_TONES[model.category] ?? "neutral"} className="shrink-0">
+                    {titleCase(model.category)}
+                  </Badge>
+                </header>
+
+                {model.description ? (
+                  <p className="text-xs leading-relaxed text-ink-muted">{model.description}</p>
+                ) : null}
+
+                {model.capabilities.length > 0 ? (
+                  <ul className="flex flex-wrap gap-1">
+                    {model.capabilities.map((capability) => (
+                      <li
+                        key={capability}
+                        className="rounded-md border border-line bg-raised/60 px-1.5 py-0.5 text-[10.5px] text-ink-faint"
+                      >
+                        {capability}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-ink-faint">Context</dt>
+                    <dd className="numeric text-ink">{formatLimit(model.contextWindow)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-ink-faint">Max out</dt>
+                    <dd className="numeric text-ink">{formatLimit(model.maxOutputTokens)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-ink-faint">Input</dt>
+                    <dd className="numeric text-ink">{formatPricePerMillion(model.inputPrice)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-ink-faint">Output</dt>
+                    <dd className="numeric text-ink">{formatPricePerMillion(model.outputPrice)}</dd>
+                  </div>
+                </dl>
+
+                {/*
+                 * Doubles as the text equivalent of the vendor tile, which is `aria-hidden`.
+                 * "via <provider>" is dropped when the two names are the same word, so a card
+                 * never reads "OpenAI · via Openai" or "Madefaka · via Madefaka".
+                 */}
+                <footer className="mt-auto flex items-center justify-between gap-2 border-t border-line pt-3">
+                  <span className="min-w-0 truncate text-[11px] text-ink-faint">
+                    <span className="text-ink-muted">{vendor.label}</span>
+                    {vendor.label.toLowerCase() === model.provider.toLowerCase()
+                      ? null
+                      : ` · via ${routedVia}`}
+                  </span>
+                  {model.available ? (
+                    <Badge tone="brand" dot className="shrink-0">
+                      Available
+                    </Badge>
+                  ) : (
+                    <Link
+                      href="/subscription"
+                      className="shrink-0 rounded-lg border border-amber/35 bg-amber/10 px-2 py-1 text-[11px] text-amber transition-opacity hover:opacity-85"
+                    >
+                      Needs {model.minPlanName}
+                    </Link>
+                  )}
+                </footer>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

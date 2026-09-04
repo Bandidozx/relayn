@@ -11,15 +11,22 @@
  * and run in an offline environment.
  */
 @theme {
-  /* Surfaces, darkest to lightest */
+  /*
+   * Surfaces, darkest to lightest.
+   *
+   * The steps are deliberately wide enough to read as separate planes. An earlier palette put
+   * canvas at #06080b and surface at #0a0e14 — four points of luminance apart — so a card was
+   * distinguishable from the page only by its hairline, and every screen read as one flat black
+   * sheet. The hue is unchanged; only the ladder is.
+   */
   --color-canvas: #06080b;
-  --color-surface: #0a0e14;
-  --color-raised: #101620;
-  --color-hover: #151d29;
+  --color-surface: #111823;
+  --color-raised: #1a2331;
+  --color-hover: #222d3d;
 
-  /* Hairlines */
-  --color-line: #1a2230;
-  --color-line-strong: #27313f;
+  /* Hairlines. Lifted with the surfaces so an edge still reads against `raised`. */
+  --color-line: #232e3f;
+  --color-line-strong: #36445a;
 
   /* Text */
   --color-ink: #eaeef6;

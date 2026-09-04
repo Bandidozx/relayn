@@ -153,9 +153,11 @@ async function syncOne(provider: ModelProvider, sortBase: number): Promise<Provi
           modelId,
           name: info.name ?? deriveName(info.id),
           category,
-          description:
-            info.description ??
-            `Served by ${provider.label} as \`${info.id}\`. Discovered by catalogue sync; pricing and tier are editable in Admin → Models.`,
+          // Nothing synthesised. The sentence this used to generate was byte-identical on every
+          // synced row and only repeated what the card already shows — provider in the footer,
+          // upstream id in the copy field — so it read as filler and buried the real metrics.
+          // Upstreams that publish genuine prose still get it; everything else renders nothing.
+          description: info.description ?? "",
           capabilities: capabilities(info, category),
           minPlan: inferMinPlan(info.outputPrice),
           enabled: true,
