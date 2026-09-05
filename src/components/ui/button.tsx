@@ -5,11 +5,12 @@ export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-brand text-brand-ink hover:bg-brand-strong active:bg-brand-strong disabled:hover:bg-brand font-semibold",
-  secondary: "bg-raised text-ink border border-line-strong hover:bg-hover disabled:hover:bg-raised",
+    "bg-brand text-brand-ink hover:bg-brand-strong active:bg-brand-strong shadow-[0_0_20px_-3px_var(--glow-brand),inset_0_1px_0_var(--sheen-strong)] disabled:hover:bg-brand font-semibold",
+  secondary:
+    "bg-raised/80 text-ink border border-line-strong hover:bg-hover hover:border-ink-faint/40 shadow-[inset_0_1px_0_var(--sheen),0_2px_4px_var(--shade)] disabled:hover:bg-raised",
   ghost: "text-ink-muted hover:bg-hover hover:text-ink",
-  outline: "border border-line-strong text-ink hover:bg-hover hover:border-ink-faint",
-  danger: "bg-rose/12 text-rose border border-rose/35 hover:bg-rose/20",
+  outline: "border border-line-strong text-ink hover:bg-hover hover:border-ink-faint shadow-sm",
+  danger: "bg-rose/12 text-rose border border-rose/35 hover:bg-rose/20 shadow-[0_0_16px_-4px_var(--glow-rose)]",
 };
 
 const SIZES: Record<ButtonSize, string> = {
@@ -58,7 +59,7 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-colors select-none disabled:cursor-not-allowed disabled:opacity-55",
+        "inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-all duration-150 active:scale-[0.98] select-none disabled:cursor-not-allowed disabled:opacity-55",
         VARIANTS[variant],
         SIZES[size],
         className,

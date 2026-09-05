@@ -57,7 +57,7 @@ const TARGET: WalletPaymentTarget = {
   assetAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   assetDecimals: 6,
   address: "0x9578031Bedb9cc7CE2d605Dbce2aecf2e63A4C88",
-  amountBaseUnits: "100000",
+  amountBaseUnits: "500000",
 };
 
 const PAYER = "0x2222222222222222222222222222222222222222";
@@ -254,11 +254,11 @@ describe("the transaction itself (items 3, 4, 5)", () => {
     expect(wordAt(data, 0)).toBe(`${"0".repeat(24)}9578031bedb9cc7ce2d605dbce2aecf2e63a4c88`);
   });
 
-  it("encodes exactly 100000 base units", () => {
-    const data = encodeErc20Transfer(TARGET.address, "100000");
-    // 100000 = 0x186a0. Right-aligned in a 32-byte word, no floating point anywhere in the path.
-    expect(wordAt(data, 1)).toBe(`${"0".repeat(59)}186a0`);
-    expect(decodeUint256(`0x${wordAt(data, 1)}`)).toBe(100000n);
+  it("encodes exactly 500000 base units", () => {
+    const data = encodeErc20Transfer(TARGET.address, "500000");
+    // 500000 = 0x7a120. Right-aligned in a 32-byte word, no floating point anywhere in the path.
+    expect(wordAt(data, 1)).toBe(`${"0".repeat(59)}7a120`);
+    expect(decodeUint256(`0x${wordAt(data, 1)}`)).toBe(500000n);
     expect(data).toHaveLength(2 + 8 + 128);
   });
 
@@ -266,12 +266,12 @@ describe("the transaction itself (items 3, 4, 5)", () => {
     expect(buildTransferTransaction(PAYER, TARGET).data).toBe(
       "0xa9059cbb" +
         "0000000000000000000000009578031bedb9cc7ce2d605dbce2aecf2e63a4c88" +
-        "00000000000000000000000000000000000000000000000000000000000186a0",
+        "000000000000000000000000000000000000000000000000000000000007a120",
     );
   });
 
   it("refuses to encode anything that is not an address or a positive integer", () => {
-    expect(() => encodeErc20Transfer("0xnope", "100000")).toThrow(WalletEncodeError);
+    expect(() => encodeErc20Transfer("0xnope", "500000")).toThrow(WalletEncodeError);
     expect(() => encodeErc20Transfer(TARGET.address, "0")).toThrow(WalletEncodeError);
     expect(() => encodeErc20Transfer(TARGET.address, "0.1")).toThrow();
     expect(() => encodeErc20Transfer(TARGET.address, "100000.00000000001")).toThrow();
@@ -289,8 +289,8 @@ describe("the transaction itself (items 3, 4, 5)", () => {
     expect(call[0].data.slice(0, 10)).toBe(ERC20_BALANCE_OF_SELECTOR);
     expect(call[1]).toBe("latest");
 
-    expect(hasSufficientBalance(100_000n, "100000")).toBe(true);
-    expect(hasSufficientBalance(99_999n, "100000")).toBe(false);
+    expect(hasSufficientBalance(500_000n, "500000")).toBe(true);
+    expect(hasSufficientBalance(499_999n, "500000")).toBe(false);
     expect(formatWalletBalance(1_500_000n, 6)).toBe("1.50");
     expect(decodeUint256("0x")).toBe(0n);
   });

@@ -138,7 +138,7 @@ export async function getSubscription(userId: string): Promise<SubscriptionPaylo
  * No `changePlan` export, by design.
  *
  * It used to back `PATCH /api/subscription` for the Free/Pro/Business picker. The picker is gone —
- * `unlimited` at $0.10 is the only thing on offer — and a mutator with no UI behind it is just a
+ * `unlimited` at $0.50 is the only thing on offer — and a mutator with no UI behind it is just a
  * free-upgrade endpoint waiting to be called directly with curl. Removing the function removes the
  * capability rather than guarding it, which is the stronger of the two.
  *

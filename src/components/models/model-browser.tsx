@@ -54,7 +54,7 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" aria-label="Model category" className="flex flex-wrap gap-1">
+        <div role="tablist" aria-label="Model category" className="flex flex-wrap items-center gap-1.5 rounded-xl border border-line/60 bg-surface/50 p-1 backdrop-blur-md">
           {tabs.map((tab) => {
             const count =
               tab === "all"
@@ -68,14 +68,21 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
                 aria-selected={tab === category}
                 onClick={() => setCategory(tab)}
                 className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs transition-colors",
+                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
                   tab === category
-                    ? "bg-brand/12 font-medium text-brand"
+                    ? "bg-brand/15 text-brand shadow-sm"
                     : "text-ink-muted hover:bg-hover hover:text-ink",
                 )}
               >
-                {tab === "all" ? "All models" : titleCase(tab)}
-                <span className="numeric ml-1.5 text-ink-faint">{count}</span>
+                <span>{tab === "all" ? "All models" : titleCase(tab)}</span>
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-mono",
+                    tab === category ? "bg-brand/20 text-brand" : "bg-raised text-ink-faint",
+                  )}
+                >
+                  {count}
+                </span>
               </button>
             );
           })}
@@ -113,9 +120,9 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
             aria-pressed={availableOnly}
             onClick={() => setAvailableOnly((current) => !current)}
             className={cn(
-              "rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
+              "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all",
               availableOnly
-                ? "border-brand/40 bg-brand/12 text-brand"
+                ? "border-brand/40 bg-brand/15 text-brand shadow-sm shadow-brand/10"
                 : "border-line-strong text-ink-muted hover:bg-hover hover:text-ink",
             )}
           >
@@ -132,7 +139,15 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
           />
         </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        /* `grid-cols-1` rather than relying on the implicit track: an implicit track is sized
+           `auto`, so its minimum is the widest card's min-content — and a model card holds a long
+           model id, a spec matrix and badges, which added up to ~545px. The cards ignored the
+           343px a phone actually has and the page scrolled sideways. `grid-cols-1` compiles to
+           `repeat(1, minmax(0, 1fr))`, which is the clamp that was missing.
+
+           A plain block comment, not a brace-wrapped JSX comment: this is a ternary's alternative
+           — an expression position — where `{ }` parses as a block, not as a comment slot. */
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {models.map((model) => {
             const vendor = resolveVendor(model.modelId, model.provider);
             const routedVia = titleCase(model.provider);
@@ -140,103 +155,121 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
               <article
                 key={model.id}
                 className={cn(
-                  "panel relative flex flex-col gap-3 p-4 transition-colors",
-                  model.available ? "hover:border-line-strong" : "opacity-75",
+                  "group relative flex flex-col justify-between gap-3.5 rounded-2xl border bg-gradient-to-b from-surface/90 to-surface/50 p-5 backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-pop",
+                  model.available
+                    ? "border-line/70 hover:border-brand/40 hover:shadow-brand/5"
+                    : "border-line/50 opacity-80 hover:opacity-100 hover:border-amber/40 hover:shadow-amber/5",
                 )}
               >
-                {/*
-                 * Status stripe along the top edge.
-                 *
-                 * It encodes the only status this page actually knows — whether the caller's plan
-                 * may call the model. Per-model provider health is not measured anywhere, so there
-                 * is deliberately no "degraded" state to draw; inventing one would be a made-up
-                 * number wearing a colour.
-                 *
-                 * The radius is the card's minus its 1px border so the stripe follows the inner
-                 * corner. That avoids `overflow-hidden` on the card, which would clip the copy
-                 * button's toast.
-                 */}
+                {/* Ambient top highlight line */}
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "absolute inset-x-0 top-0 h-[3px] rounded-t-[calc(var(--radius-card)-1px)]",
-                    model.available ? "bg-brand/70" : "bg-amber/70",
+                    "pointer-events-none absolute inset-x-0 top-0 h-[1.5px] rounded-t-2xl transition-opacity duration-300",
+                    model.available
+                      ? "bg-gradient-to-r from-transparent via-brand/45 to-transparent opacity-0 group-hover:opacity-100"
+                      : "bg-gradient-to-r from-transparent via-amber/45 to-transparent opacity-0 group-hover:opacity-100",
                   )}
                 />
 
-                <header className="flex items-start gap-3">
-                  <VendorMark vendor={vendor} />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-semibold text-ink">{model.name}</h3>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <code className="numeric truncate text-[11px] text-ink-faint">
-                        {model.modelId}
-                      </code>
-                      <CopyButton
-                        value={model.modelId}
-                        compact
-                        label={`Copy ${model.modelId}`}
-                        toastMessage="Model id copied"
-                      />
+                <header className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3.5 min-w-0">
+                    <VendorMark vendor={vendor} />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-base font-semibold text-ink group-hover:text-ink-strong transition-colors">
+                        {model.name}
+                      </h3>
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 rounded-md border border-line/70 bg-canvas/60 px-2 py-0.5 font-mono text-[11px] text-ink-muted group-hover:text-ink transition-colors">
+                          <span className="truncate max-w-[160px] sm:max-w-[200px]">{model.modelId}</span>
+                          <CopyButton
+                            value={model.modelId}
+                            compact
+                            label={`Copy ${model.modelId}`}
+                            toastMessage="Model id copied"
+                          />
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <Badge tone={CATEGORY_TONES[model.category] ?? "neutral"} className="shrink-0">
-                    {titleCase(model.category)}
-                  </Badge>
+
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <Badge tone={CATEGORY_TONES[model.category] ?? "neutral"} className="capitalize font-medium">
+                      {titleCase(model.category)}
+                    </Badge>
+                    {model.available ? (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-brand">
+                        <span className="relative flex size-1.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60" />
+                          <span className="relative inline-flex size-1.5 rounded-full bg-brand" />
+                        </span>
+                        Available
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber">
+                        <svg viewBox="0 0 16 16" fill="none" className="size-3" stroke="currentColor" strokeWidth="1.5">
+                          <rect x="3" y="6" width="10" height="8" rx="1.5" />
+                          <path d="M5 6V4a3 3 0 0 1 6 0v2" strokeLinecap="round" />
+                        </svg>
+                        {model.minPlanName}
+                      </span>
+                    )}
+                  </div>
                 </header>
 
                 {model.description ? (
-                  <p className="text-xs leading-relaxed text-ink-muted">{model.description}</p>
+                  <p className="line-clamp-2 text-xs leading-relaxed text-ink-muted">
+                    {model.description}
+                  </p>
                 ) : null}
 
                 {model.capabilities.length > 0 ? (
-                  <ul className="flex flex-wrap gap-1">
+                  <ul className="flex flex-wrap gap-1.5">
                     {model.capabilities.map((capability) => (
                       <li
                         key={capability}
-                        className="rounded-md border border-line bg-raised/60 px-1.5 py-0.5 text-[10.5px] text-ink-faint"
+                        className="inline-flex items-center gap-1 rounded-md border border-line/60 bg-raised/40 px-2 py-0.5 text-[11px] text-ink-muted transition-colors group-hover:border-line-strong group-hover:text-ink"
                       >
+                        <span className="size-1 rounded-full bg-brand/50" />
                         {capability}
                       </li>
                     ))}
                   </ul>
                 ) : null}
 
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-ink-faint">Context</dt>
-                    <dd className="numeric text-ink">{formatLimit(model.contextWindow)}</dd>
+                {/* Specs Matrix: Context, Output limit, Pricing */}
+                <div className="grid grid-cols-2 gap-2 rounded-xl border border-line/50 bg-canvas/40 p-2.5 sm:grid-cols-4">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Context</span>
+                    <span className="mt-0.5 font-mono text-xs font-semibold text-ink">{formatLimit(model.contextWindow)}</span>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-ink-faint">Max out</dt>
-                    <dd className="numeric text-ink">{formatLimit(model.maxOutputTokens)}</dd>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Max Out</span>
+                    <span className="mt-0.5 font-mono text-xs font-semibold text-ink">{formatLimit(model.maxOutputTokens)}</span>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-ink-faint">Input</dt>
-                    <dd className="numeric text-ink">{formatPricePerMillion(model.inputPrice)}</dd>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Input / 1M</span>
+                    <span className="mt-0.5 font-mono text-xs font-semibold text-ink">{formatPricePerMillion(model.inputPrice)}</span>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-ink-faint">Output</dt>
-                    <dd className="numeric text-ink">{formatPricePerMillion(model.outputPrice)}</dd>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Output / 1M</span>
+                    <span className="mt-0.5 font-mono text-xs font-semibold text-ink">{formatPricePerMillion(model.outputPrice)}</span>
                   </div>
-                </dl>
+                </div>
 
-                {/*
-                 * Doubles as the text equivalent of the vendor tile, which is `aria-hidden`.
-                 * "via <provider>" is dropped when the two names are the same word, so a card
-                 * never reads "OpenAI · via Openai" or "Madefaka · via Madefaka".
-                 */}
-                <footer className="mt-auto flex items-center justify-between gap-2 border-t border-line pt-3">
-                  <span className="min-w-0 truncate text-[11px] text-ink-faint">
-                    <span className="text-ink-muted">{vendor.label}</span>
+                <footer className="mt-auto flex items-center justify-between gap-3 border-t border-line/60 pt-3 text-[11px]">
+                  <div className="flex items-center gap-1.5 min-w-0 truncate text-ink-muted">
+                    <span className="size-1.5 rounded-full bg-line-strong" />
+                    <span className="font-medium text-ink">{vendor.label}</span>
                     {vendor.label.toLowerCase() === model.provider.toLowerCase()
                       ? null
-                      : ` · via ${routedVia}`}
-                  </span>
+                      : <span className="truncate text-ink-faint">· via {routedVia}</span>}
+                  </div>
                   {model.available ? (
-                    <Badge tone="brand" dot className="shrink-0">
-                      Available
-                    </Badge>
+                    <span className="inline-flex items-center gap-1 font-medium text-ink-faint group-hover:text-brand transition-colors">
+                      Ready to route
+                      <span className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
+                    </span>
                   ) : (
                     /*
                      * Names the purchase, not the tier the row is gated behind. `minPlan` may say
@@ -247,7 +280,7 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
                      */
                     <Link
                       href="/subscription"
-                      className="shrink-0 rounded-lg border border-amber/35 bg-amber/10 px-2 py-1 text-[11px] text-amber transition-opacity hover:opacity-85"
+                      className="shrink-0 rounded-lg border border-amber/35 bg-amber/10 px-2.5 py-1 font-medium text-amber transition-all hover:bg-amber/20 hover:border-amber/50"
                     >
                       Unlock with Unlimited
                     </Link>

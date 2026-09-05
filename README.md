@@ -532,7 +532,7 @@ so no numeric-precision behaviour changes between engines.
 ## Deliberate omissions
 
 - **No recurring billing.** There is exactly one thing to buy — permanent `unlimited` for
-  $0.10, charged once — and it is granted only by a chain-verified USDC transfer
+  $0.50, charged once — and it is granted only by a chain-verified USDC transfer
   (`/api/payments/crypto/verify`) or a signature-verified provider callback
   (`/api/payments/callback`). No card is ever stored or charged, `billingConnected` stays
   false, and `/api/subscription` is `GET`-only: no request body can name a plan.

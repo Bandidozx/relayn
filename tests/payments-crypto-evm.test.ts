@@ -10,7 +10,8 @@
  *   - **an unreachable node is not a verdict.** Transport, HTTP and JSON-RPC failures raise
  *     `CryptoProviderError`; only a node that answers "no such hash" produces `found: false`.
  *   - **`evmConfigFromEnv()` returns null rather than a half-configured gate.** A bad address,
- *     an unknown chain, a missing token or a malformed price must all disable the rail.
+ *     an unknown chain, a missing token, a malformed price, or a price that disagrees with the
+ *     one the UI advertises must all disable the rail.
  *
  * The env-driven half re-imports the module under `vi.resetModules()` so it exercises the real
  * `src/lib/env.ts` wiring rather than a hand-built object.
@@ -49,8 +50,8 @@ function config(over: Partial<EvmConfig> = {}): EvmConfig {
     assetSymbol: "USDC",
     assetDecimals: 6,
     recipient: RECIPIENT,
-    requiredBaseUnits: "100000",
-    amountDisplay: "0.10",
+    requiredBaseUnits: "500000",
+    amountDisplay: "0.50",
     minConfirmations: 3,
     maxAgeMs: 24 * 60 * 60 * 1000,
     explorerUrl: "https://basescan.org",
@@ -66,7 +67,7 @@ function topic(address: string): string {
 function transferLog(
   over: { token?: string; from?: string; to?: string; value?: bigint } = {},
 ): Record<string, unknown> {
-  const { token = TOKEN, from = SENDER, to = RECIPIENT, value = 100_000n } = over;
+  const { token = TOKEN, from = SENDER, to = RECIPIENT, value = 500_000n } = over;
   return {
     address: token,
     topics: [TRANSFER_TOPIC, topic(from), topic(to)],
@@ -149,7 +150,7 @@ describe("verifyTransaction — a good payment", () => {
       blockNumber: String(BLOCK),
       confirmations: 6,
       minedAt: new Date(MINED_SECONDS * 1000),
-      receivedBaseUnits: "100000",
+      receivedBaseUnits: "500000",
       sender: SENDER,
       assetMovedElsewhere: false,
       otherAssetReceived: false,
@@ -162,13 +163,13 @@ describe("verifyTransaction — a good payment", () => {
         eth_getTransactionReceipt: {
           status: "0x1",
           logs: [
-            transferLog({ value: 60_000n }),
-            transferLog({ value: 40_000n, from: OUTSIDER }),
+            transferLog({ value: 300_000n }),
+            transferLog({ value: 200_000n, from: OUTSIDER }),
           ],
         },
       }),
     );
-    expect(observed.receivedBaseUnits).toBe("100000");
+    expect(observed.receivedBaseUnits).toBe("500000");
     // The payer of record is the first matching transfer, not the last.
     expect(observed.sender).toBe(SENDER);
   });
@@ -186,13 +187,13 @@ describe("verifyTransaction — a good payment", () => {
                 topic(SENDER).toUpperCase().replace("0X", "0x"),
                 topic(RECIPIENT).toUpperCase().replace("0X", "0x"),
               ],
-              data: hex(100_000n),
+              data: hex(500_000n),
             },
           ],
         },
       }),
     );
-    expect(observed.receivedBaseUnits).toBe("100000");
+    expect(observed.receivedBaseUnits).toBe("500000");
     expect(observed.sender).toBe(SENDER);
   });
 });
@@ -254,13 +255,13 @@ describe("verifyTransaction — what went wrong, told apart", () => {
           status: "0x1",
           logs: [
             // An Approval, or any other event, on our token.
-            { address: TOKEN, topics: [`0x${"1".repeat(64)}`, topic(SENDER), topic(RECIPIENT)], data: hex(100_000n) },
+            { address: TOKEN, topics: [`0x${"1".repeat(64)}`, topic(SENDER), topic(RECIPIENT)], data: hex(500_000n) },
             // A Transfer that does not index its recipient: unreadable, so not counted.
-            { address: TOKEN, topics: [TRANSFER_TOPIC], data: hex(100_000n) },
+            { address: TOKEN, topics: [TRANSFER_TOPIC], data: hex(500_000n) },
             // A malformed topic of the wrong width.
-            { address: TOKEN, topics: [TRANSFER_TOPIC, topic(SENDER), "0x1234"], data: hex(100_000n) },
+            { address: TOKEN, topics: [TRANSFER_TOPIC, topic(SENDER), "0x1234"], data: hex(500_000n) },
             // No topics at all.
-            { address: TOKEN, data: hex(100_000n) },
+            { address: TOKEN, data: hex(500_000n) },
           ],
         },
       }),
@@ -345,7 +346,7 @@ describe("verifyTransaction — existence, finality and short circuits", () => {
       }),
     );
     expect(observed.minedAt).toBeNull();
-    expect(observed.receivedBaseUnits).toBe("100000");
+    expect(observed.receivedBaseUnits).toBe("500000");
   });
 
   it("tolerates a block header with no usable timestamp", async () => {
@@ -421,9 +422,9 @@ describe("getPaymentInstructions", () => {
       assetAddress: TOKEN,
       assetDecimals: 6,
       address: RECIPIENT,
-      amount: "0.10",
-      amountBaseUnits: "100000",
-      priceUsd: "0.10",
+      amount: "0.50",
+      amountBaseUnits: "500000",
+      priceUsd: "$0.50",
       minConfirmations: 3,
       explorerUrl: "https://basescan.org",
     });
@@ -442,7 +443,7 @@ describe("getPaymentInstructions", () => {
 
   it("formats base units back to whole units for display and audit metadata", () => {
     const provider = createEvmProvider(config());
-    expect(provider.normalizePayment("100000")).toBe("0.1");
+    expect(provider.normalizePayment("500000")).toBe("0.5");
     expect(provider.normalizePayment("0")).toBe("0");
     expect(provider.label).toBe("Base · USDC");
     expect(provider.isConfigured()).toBe(true);
@@ -452,7 +453,7 @@ describe("getPaymentInstructions", () => {
     expect(evmExpectation(config())).toEqual({
       chainId: 8453,
       recipient: RECIPIENT,
-      requiredBaseUnits: "100000",
+      requiredBaseUnits: "500000",
       minConfirmations: 3,
       maxAgeMs: 86_400_000,
     });
@@ -508,9 +509,9 @@ describe("evmConfigFromEnv", () => {
       assetSymbol: "USDC",
       assetDecimals: 6,
       recipient: RECIPIENT,
-      // $0.10 as a fixed integer. No market rate is consulted anywhere in this path.
-      requiredBaseUnits: "100000",
-      amountDisplay: "0.10",
+      // $0.50 as a fixed integer. No market rate is consulted anywhere in this path.
+      requiredBaseUnits: "500000",
+      amountDisplay: "0.50",
       minConfirmations: 3,
       maxAgeMs: 86_400_000,
       explorerUrl: "https://basescan.org",
@@ -573,16 +574,32 @@ describe("evmConfigFromEnv", () => {
       // Base Sepolia deliberately carries no default token: the operator must name it.
       ["a testnet with no token named", { ...MINIMAL, CRYPTO_PAYMENT_NETWORK: "base-sepolia" }],
       ["a price of zero", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "0" }],
-      ["a negative price", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "-0.10" }],
+      ["a negative price", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "-0.50" }],
       ["a non-numeric price", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "ten cents" }],
-      ["a price in scientific notation", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "1e-1" }],
+      ["a price in scientific notation", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "5e-1" }],
       // 0.1000005 USDC cannot be represented in 6 decimals; silently rounding an operator's
       // price into a live payment gate would be worse than disabling the rail.
       ["a price finer than the asset's decimals", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "0.1000005" }],
+      // Well-formed, and wrong. These two are the drift the boot-time check exists for: an
+      // operator who raises UNLIMITED_PRICE_USD_MICRO and forgets this variable would otherwise
+      // keep selling $0.50 of permanent access for the old $0.10, silently and indefinitely.
+      ["the old price left behind after a rise", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "0.10" }],
+      ["a price above the one advertised", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "1.00" }],
+      // One base unit short of the advertised price is still the wrong price.
+      ["a near miss", { ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: "0.499999" }],
     ];
 
     for (const [label, vars] of unusable) {
       expect(await configFromEnv(vars), label).toBeNull();
+      for (const key of KEYS) delete process.env[key];
+    }
+  });
+
+  it("accepts the advertised price however an operator spells it", async () => {
+    // "0.5", "0.50" and "0.500000" are the same money; the check compares base units, not text.
+    for (const spelling of ["0.5", "0.50", "0.500000"]) {
+      const built = await configFromEnv({ ...MINIMAL, CRYPTO_PAYMENT_AMOUNT: spelling });
+      expect(built?.requiredBaseUnits, spelling).toBe("500000");
       for (const key of KEYS) delete process.env[key];
     }
   });

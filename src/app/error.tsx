@@ -43,7 +43,7 @@ export default function GlobalError({
         <button
           type="button"
           onClick={reset}
-          className="rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-black transition-opacity hover:opacity-90"
+          className="rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-brand-ink transition-opacity hover:opacity-90"
         >
           Try again
         </button>

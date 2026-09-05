@@ -22,15 +22,27 @@ export function CodeBlock({
   maxHeight?: string;
 }) {
   return (
-    <div className={cn("overflow-hidden rounded-xl border border-line bg-canvas", className)}>
-      <div className="flex items-center justify-between gap-3 border-b border-line bg-raised/50 px-3 py-2">
-        <span className="truncate font-mono text-[11px] text-ink-faint">
-          {filename ?? language ?? "shell"}
-        </span>
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl border border-line/70 bg-code shadow-[inset_0_1px_0_var(--sheen),0_12px_28px_-8px_var(--shade)]",
+        className,
+      )}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-line/60 bg-surface/40 px-3.5 py-2.5 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5" aria-hidden>
+            <span className="size-2.5 rounded-full bg-rose/70" />
+            <span className="size-2.5 rounded-full bg-amber/70" />
+            <span className="size-2.5 rounded-full bg-brand/70" />
+          </div>
+          <span className="ml-1 truncate font-mono text-[11px] text-ink-faint">
+            {filename ?? language ?? "shell"}
+          </span>
+        </div>
         <CopyButton value={code} toastMessage="Snippet copied" />
       </div>
       <pre
-        className="overflow-auto px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-ink-muted"
+        className="overflow-auto p-4 font-mono text-[12.5px] leading-relaxed text-ink/90 selection:bg-brand/20"
         style={{ maxHeight }}
       >
         <code>{code}</code>
@@ -54,7 +66,11 @@ export function CodeTabs({ tabs, className }: { tabs: CodeTab[]; className?: str
 
   return (
     <div className={className}>
-      <div role="tablist" aria-label="Code language" className="mb-2.5 flex flex-wrap gap-1">
+      <div
+        role="tablist"
+        aria-label="Code language"
+        className="mb-3 inline-flex flex-wrap items-center gap-1 rounded-xl border border-line/60 bg-surface/60 p-1 backdrop-blur-md"
+      >
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -63,9 +79,9 @@ export function CodeTabs({ tabs, className }: { tabs: CodeTab[]; className?: str
             aria-selected={tab.id === current.id}
             onClick={() => setActive(tab.id)}
             className={cn(
-              "rounded-lg px-2.5 py-1.5 text-xs transition-colors",
+              "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150",
               tab.id === current.id
-                ? "bg-brand/12 text-brand"
+                ? "bg-brand/15 text-brand shadow-sm"
                 : "text-ink-muted hover:bg-hover hover:text-ink",
             )}
           >

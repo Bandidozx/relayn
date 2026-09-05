@@ -52,7 +52,7 @@ const OUTSIDER = "0x3333333333333333333333333333333333333333";
 const EXPECTATION: CryptoExpectation = {
   chainId: CHAIN_ID,
   recipient: RECIPIENT,
-  requiredBaseUnits: "100000", // $0.10 of a 6-decimal stablecoin, as a fixed integer
+  requiredBaseUnits: "500000", // $0.50 of a 6-decimal stablecoin, as a fixed integer
   minConfirmations: 3,
   maxAgeMs: 24 * 60 * 60 * 1000,
 };
@@ -65,9 +65,9 @@ const INSTRUCTIONS: PaymentInstructions = {
   assetAddress: TOKEN,
   assetDecimals: 6,
   address: RECIPIENT,
-  amount: "0.10",
-  amountBaseUnits: "100000",
-  priceUsd: "0.10",
+  amount: "0.50",
+  amountBaseUnits: "500000",
+  priceUsd: "$0.50",
   minConfirmations: 3,
   explorerUrl: "https://basescan.org",
 };
@@ -84,7 +84,7 @@ function observation(txHash: string, over: Partial<ObservedTransaction> = {}): O
     blockNumber: "20000000",
     confirmations: 6,
     minedAt: new Date(Date.now() - 60_000),
-    receivedBaseUnits: "100000",
+    receivedBaseUnits: "500000",
     sender: PAYER,
     assetMovedElsewhere: false,
     otherAssetReceived: false,
@@ -298,7 +298,7 @@ async function main() {
   check("none of it granted anything", sub.unlimited === false && sub.plan === "free");
 
   // ── 1 / 13 / 14. A valid transfer activates permanent unlimited ─────────────────────────
-  console.log("\nA verified $0.10 transfer");
+  console.log("\nA verified $0.50 transfer");
   // The same hash that was one confirmation short above. Nothing about the row changed; the
   // chain simply moved on — which is the case a terminal rejection would have destroyed.
   chainSays((txHash) => observation(txHash, { confirmations: 4 }));
@@ -326,7 +326,7 @@ async function main() {
     paidRow?.paidAmount === UNLIMITED_PRICE_USD_MICRO,
     `paidAmount ${paidRow?.paidAmount}`,
   );
-  check("stores the observed transfer as base units", paidRow?.amountRaw === "100000");
+  check("stores the observed transfer as base units", paidRow?.amountRaw === "500000");
   check(
     "stores the required amount from server configuration (item 13)",
     paidRow?.amountRequired === EXPECTATION.requiredBaseUnits,
@@ -373,8 +373,8 @@ async function main() {
   check(
     "the audit trail records the chain-attested figures",
     verifiedMeta.txHash === unconfirmedHash &&
-      verifiedMeta.receivedBaseUnits === "100000" &&
-      verifiedMeta.requiredBaseUnits === "100000" &&
+      verifiedMeta.receivedBaseUnits === "500000" &&
+      verifiedMeta.requiredBaseUnits === "500000" &&
       verifiedMeta.recipient === RECIPIENT &&
       verifiedMeta.sender === PAYER,
     verifiedAudit?.metadata ?? "no metadata",

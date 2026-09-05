@@ -28,7 +28,9 @@ export default function DashboardLoading() {
 
       <SkeletonCards />
 
-      <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+      {/* Mirrors the real dashboard's clamped tracks so the skeleton cannot be a different width
+          than the content it stands in for. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="panel space-y-4 p-4">
           <Skeleton className="h-3.5 w-32" />
           <Skeleton className="h-56 w-full" />

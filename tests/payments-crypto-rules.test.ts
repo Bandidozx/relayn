@@ -36,8 +36,8 @@ const MINED = new Date("2026-08-26T11:59:00.000Z");
 const expected: CryptoExpectation = {
   chainId: CHAIN_ID,
   recipient: RECIPIENT,
-  // $0.10 of a 6-decimal stablecoin. A fixed integer, so no market rate is ever consulted.
-  requiredBaseUnits: "100000",
+  // $0.50 of a 6-decimal stablecoin. A fixed integer, so no market rate is ever consulted.
+  requiredBaseUnits: "500000",
   minConfirmations: 3,
   maxAgeMs: 24 * 60 * 60 * 1000,
 };
@@ -54,7 +54,7 @@ function paid(overrides: Partial<ObservedTransaction> = {}): ObservedTransaction
     blockNumber: "20000000",
     confirmations: 6,
     minedAt: MINED,
-    receivedBaseUnits: "100000",
+    receivedBaseUnits: "500000",
     sender: "0x2222222222222222222222222222222222222222",
     assetMovedElsewhere: false,
     otherAssetReceived: false,
@@ -75,7 +75,7 @@ describe("the happy path", () => {
     });
   });
 
-  it("activates an overpayment — more than $0.10 still satisfies at least $0.10", () => {
+  it("activates an overpayment — more than $0.50 still satisfies at least $0.50", () => {
     expect(decide(paid({ receivedBaseUnits: "5000000" })).action).toBe("activate");
   });
 
@@ -168,7 +168,7 @@ describe("terminal rejections", () => {
   });
 
   it("rejects one base unit short of the price (spec item 7)", () => {
-    expect(decide(paid({ receivedBaseUnits: "99999" }))).toEqual({
+    expect(decide(paid({ receivedBaseUnits: "499999" }))).toEqual({
       action: "reject",
       reason: "insufficient_amount",
       message: CRYPTO_MESSAGES.insufficient,
@@ -343,7 +343,7 @@ describe("cryptoMessageForReason", () => {
       paid({ txChainId: 1 }),
       paid({ receivedBaseUnits: "0" }),
       paid({ receivedBaseUnits: "0", otherAssetReceived: true }),
-      paid({ receivedBaseUnits: "99999" }),
+      paid({ receivedBaseUnits: "499999" }),
       paid({ minedAt: new Date(0) }),
       paid({ mined: false }),
       paid({ confirmations: 0 }),

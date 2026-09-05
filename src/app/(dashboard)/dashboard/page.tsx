@@ -14,6 +14,7 @@ import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Td, TableWrap, Th, Tr } from "@/components/ui/table";
 import { getSession } from "@/lib/auth/session";
+import { cn } from "@/lib/cn";
 import { planOf } from "@/lib/plans";
 import { getDashboardOverview } from "@/lib/usage/metrics";
 import {
@@ -84,7 +85,19 @@ export default async function DashboardPage() {
         <WindowStatCards />
       </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+      {/*
+       * `grid-cols-1` at the base and `minmax(0, …)` at `xl` are both load-bearing, not tidying.
+       *
+       * A grid track sized `auto` — which is what a single implicit column is — or a bare `1fr`
+       * takes its minimum from its content, and the recent-activity card below contains a
+       * `min-w-max` table. So the track grew to the table's full width, the card grew with it,
+       * and the whole page scrolled sideways on a phone instead of the table scrolling inside its
+       * own `overflow-x-auto` wrapper. `grid-cols-1` compiles to `repeat(1, minmax(0, 1fr))`,
+       * which is exactly the clamp that hands the overflow back to the wrapper.
+       *
+       * Nothing moves when the content already fits, so this is invisible on a wide screen.
+       */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader
             title="Usage trend"
@@ -206,7 +219,7 @@ export default async function DashboardPage() {
                     </span>
                   </div>
                   <div
-                    className="h-2 overflow-hidden rounded-full bg-line"
+                    className="h-2 overflow-hidden rounded-full bg-line/80"
                     role="progressbar"
                     aria-valuenow={Math.round(quota.percentUsed)}
                     aria-valuemin={0}
@@ -214,29 +227,35 @@ export default async function DashboardPage() {
                     aria-label="Allocation used"
                   >
                     <div
-                      className={
+                      className={cn(
+                        /*
+                         * Both stops are palette tokens, so the bar darkens with the light theme
+                         * instead of ending in a Tailwind default (`rose-400`, `emerald-400`) that
+                         * washes out on paper. The leading edge stays the brighter of the two.
+                         */
+                        "h-full rounded-full bg-gradient-to-r transition-all duration-500",
                         quota.percentUsed >= 90
-                          ? "h-full rounded-full bg-rose"
+                          ? "from-rose/85 to-rose shadow-[0_0_10px_var(--glow-rose)]"
                           : quota.percentUsed >= 70
-                            ? "h-full rounded-full bg-amber"
-                            : "h-full rounded-full bg-brand"
-                      }
+                            ? "from-amber/85 to-amber shadow-[0_0_10px_var(--glow-amber)]"
+                            : "from-brand-strong to-brand shadow-[0_0_10px_var(--glow-brand)]",
+                      )}
                       style={{ width: `${Math.min(100, quota.percentUsed)}%` }}
                     />
                   </div>
                 </>
               )}
               <dl className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="rounded-lg border border-line bg-raised/50 px-2.5 py-2">
+                <div className="rounded-xl border border-line/60 bg-raised/40 p-2.5">
                   <dt className="text-ink-faint">Active keys</dt>
-                  <dd className="numeric mt-0.5 text-ink">
+                  <dd className="numeric mt-1 text-sm font-semibold text-ink">
                     {overview.activeKeys}
-                    <span className="text-ink-faint"> / {overview.totalKeys} total</span>
+                    <span className="text-xs font-normal text-ink-faint"> / {overview.totalKeys} total</span>
                   </dd>
                 </div>
-                <div className="rounded-lg border border-line bg-raised/50 px-2.5 py-2">
+                <div className="rounded-xl border border-line/60 bg-raised/40 p-2.5">
                   <dt className="text-ink-faint">Subscription</dt>
-                  <dd className="mt-0.5">
+                  <dd className="mt-1">
                     <StatusBadge status={quota.status} />
                   </dd>
                 </div>
@@ -246,15 +265,16 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
+      {/* Same clamp as the grid above, and this is the one that held the `min-w-max` table. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader
             title="Recent activity"
-            description="The last eight requests your keys made."
+            description="The last eight requests processed by your gateway."
             action={
               <Link
                 href="/usage"
-                className="text-[11px] text-brand transition-opacity hover:opacity-80"
+                className="inline-flex items-center gap-1 text-xs font-medium text-brand transition-opacity hover:opacity-80"
               >
                 View all logs →
               </Link>
@@ -267,7 +287,7 @@ export default async function DashboardPage() {
               action={
                 <Link
                   href="/api-keys"
-                  className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-brand-ink transition-opacity hover:opacity-90"
+                  className="rounded-xl bg-brand px-3.5 py-2 text-xs font-semibold text-brand-ink transition-opacity hover:opacity-90 shadow-sm shadow-brand/20"
                 >
                   Create an API key
                 </Link>
@@ -288,13 +308,13 @@ export default async function DashboardPage() {
               <tbody>
                 {recent.map((row) => (
                   <Tr key={row.id}>
-                    <Td className="whitespace-nowrap text-ink">{formatRelative(row.createdAt)}</Td>
-                    <Td className="numeric text-ink">{row.modelId}</Td>
-                    <Td>{row.apiKeyName ?? "—"}</Td>
-                    <Td align="right" className="numeric text-ink">
+                    <Td className="whitespace-nowrap text-xs text-ink-muted">{formatRelative(row.createdAt)}</Td>
+                    <Td className="numeric font-mono text-xs font-medium text-ink">{row.modelId}</Td>
+                    <Td className="text-xs text-ink-muted">{row.apiKeyName ?? "—"}</Td>
+                    <Td align="right" className="numeric font-mono text-xs text-ink">
                       {formatNumber(row.totalTokens)}
                     </Td>
-                    <Td align="right" className="numeric">
+                    <Td align="right" className="numeric font-mono text-xs text-ink-muted">
                       {formatLatency(row.latencyMs)}
                     </Td>
                     <Td>

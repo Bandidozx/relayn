@@ -110,7 +110,7 @@ export function Modal({
   return createPortal(
     <div className="fixed inset-0 z-90 flex items-end justify-center p-0 sm:items-center sm:p-6">
       <div
-        className="animate-fade absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="animate-fade absolute inset-0 bg-[var(--scrim)] backdrop-blur-sm"
         onClick={closeOnBackdrop ? onClose : undefined}
         aria-hidden
       />

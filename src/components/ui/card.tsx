@@ -6,7 +6,13 @@ export function Card({
   ...rest
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <section className={cn("panel", className)} {...rest}>
+    <section
+      className={cn(
+        "rounded-2xl border border-line/70 bg-surface/85 backdrop-blur-md shadow-[0_1px_0_0_var(--sheen)_inset,0_12px_28px_-10px_var(--shade)] transition-all",
+        className,
+      )}
+      {...rest}
+    >
       {children}
     </section>
   );
@@ -26,12 +32,12 @@ export function CardHeader({
   return (
     <header
       className={cn(
-        "flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5",
+        "flex flex-wrap items-center justify-between gap-3 border-b border-line/60 px-5 py-4",
         className,
       )}
     >
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <h2 className="text-sm font-semibold tracking-tight text-ink">{title}</h2>
         {description ? (
           <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{description}</p>
         ) : null}

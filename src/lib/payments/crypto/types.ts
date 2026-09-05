@@ -35,11 +35,11 @@ export interface PaymentInstructions {
   assetDecimals: number;
   /** Public receiving address. Relayn holds no key for it. */
   address: string;
-  /** Exact minimum, in whole units, as a decimal string: "0.10". */
+  /** Exact minimum, in whole units, as a decimal string: "0.50". */
   amount: string;
-  /** The same minimum in the asset's smallest unit, as a decimal string: "100000". */
+  /** The same minimum in the asset's smallest unit, as a decimal string: "500000". */
   amountBaseUnits: string;
-  /** What the payment is priced at, for display alongside the crypto amount. */
+  /** What the payment is priced at, already formatted for display: "$0.50". */
   priceUsd: string;
   minConfirmations: number;
   /** Read-only explorer root, for a "view transaction" link. Null when not configured. */

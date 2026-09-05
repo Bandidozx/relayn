@@ -3,12 +3,27 @@
 /*
  * Relayn design tokens.
  *
- * One dark "instrument panel" palette, defined once here and consumed everywhere as
- * Tailwind utilities (bg-surface, text-ink-muted, border-line, …). Component files never
- * hardcode a hex value, so a re-theme is a single-file change.
+ * Two palettes — an "instrument panel" dark and a paper-white light — defined once here and
+ * consumed everywhere as Tailwind utilities (bg-surface, text-ink-muted, border-line, …).
+ * Component files never hardcode a hex value, so a re-theme is a single-file change.
  *
- * Fonts are deliberately system stacks rather than a webfont download: the app must build
- * and run in an offline environment.
+ * **How theming works.** `@theme` below holds the dark palette, which is also the default: it is
+ * what `:root` gets when no preference is known. The light palette is a single override block
+ * (`:root[data-theme="light"]`) that reassigns the *same* variable names — so every utility,
+ * shadow and gradient in the app follows automatically and there is exactly one place a light
+ * value can be wrong. `src/app/layout.tsx` sets `data-theme` from `localStorage` (falling back to
+ * `prefers-color-scheme`) in a blocking script, before first paint, so switching themes never
+ * flashes and never needs a server round-trip.
+ *
+ * The non-colour effects — the inset top highlight, the drop shadow, the modal scrim, the accent
+ * glows, the grid backdrop — are tokens too (`--sheen`, `--shade`, `--scrim`, `--glow-*`,
+ * `--grid-line`). A hardcoded `rgba(255,255,255,0.06)` highlight is invisible on a white card and
+ * a hardcoded `rgba(0,0,0,0.6)` shadow is a smudge; both flip with the palette instead.
+ *
+ * Fonts are loaded by `next/font` in the root layout and self-hosted from this origin (the CSP
+ * has no allowance for fonts.gstatic.com, by design). The stacks below name the resulting CSS
+ * variables first and keep the system stack behind them, so text renders immediately with
+ * metric-matched fallbacks rather than waiting on a download.
  */
 @theme {
   /*
@@ -32,8 +47,13 @@
   --color-ink: #eaeef6;
   --color-ink-muted: #93a0b4;
   --color-ink-faint: #5f6b7d;
+  /* One step past `ink`, for the hover state of a heading that is already `ink`. */
+  --color-ink-strong: #ffffff;
 
-  /* Brand + semantic accents */
+  /* Brand + semantic accents.
+   *
+   * These are text colours as well as fills, so the light palette darkens every one of them:
+   * #3fdcb6 on white is roughly 1.6:1, which is decoration, not text. */
   --color-brand: #3fdcb6;
   --color-brand-strong: #1fc79d;
   --color-brand-ink: #04120e;
@@ -42,23 +62,114 @@
   --color-rose: #ff6b7a;
   --color-sky: #58b6ff;
 
+  /* Code surfaces sit one step darker than `canvas` in dark, and one step lighter in light. */
+  --color-code: #080c13;
+
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    "Noto Sans", sans-serif;
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-mono:
-    ui-monospace, "JetBrains Mono", "SFMono-Regular", "Cascadia Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
+    var(--font-jetbrains-mono), "Geist Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono",
+    Menlo, Consolas, "Liberation Mono", monospace;
 
-  --radius-card: 0.875rem;
+  --radius-card: 1rem;
 
-  --shadow-panel: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --shadow-pop: 0 24px 60px -20px rgb(0 0 0 / 0.75);
+  --shadow-panel: 0 1px 0 0 var(--sheen) inset, 0 8px 24px -12px var(--shade);
+  --shadow-pop: 0 24px 60px -20px var(--shade-strong);
+  --shadow-glow: 0 0 30px -5px var(--glow-brand);
 
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-rise: rise 0.22s ease-out;
   --animate-fade: fade 0.16s ease-out;
   --animate-spin-slow: spin 0.9s linear infinite;
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/*
+ * Effects, dark. Not in `@theme` because none of them should generate a utility class — they are
+ * ingredients of the shadow and gradient tokens above and of the `@utility` blocks below.
+ */
+:root {
+  --sheen: rgb(255 255 255 / 0.06);
+  --sheen-strong: rgb(255 255 255 / 0.14);
+  --shade: rgb(0 0 0 / 0.5);
+  --shade-strong: rgb(0 0 0 / 0.75);
+  --scrim: rgb(0 0 0 / 0.7);
+  --glow-brand: rgb(63 220 182 / 0.32);
+  --glow-amber: rgb(242 182 87 / 0.2);
+  --glow-rose: rgb(255 107 122 / 0.25);
+  --glow-violet: rgb(142 124 255 / 0.22);
+  --glow-sky: rgb(88 182 255 / 0.22);
+  --grid-line: rgb(255 255 255 / 0.025);
+  --glass-top: rgb(17 24 35 / 0.82);
+  --glass-bottom: rgb(13 18 27 / 0.68);
+  --glass-border: rgb(255 255 255 / 0.08);
+}
+
+/*
+ * The light palette. Every name here also exists above; nothing new is introduced, which is what
+ * makes the two themes impossible to get structurally out of step.
+ *
+ * `:root[data-theme="light"]` rather than `[data-theme="light"]` on purpose: it outranks the
+ * `:root` that Tailwind emits `@theme` into on specificity, so the override does not depend on
+ * where in the stylesheet Tailwind decides to place its own output.
+ */
+:root[data-theme="light"] {
+  --color-canvas: #eff3f8;
+  --color-surface: #ffffff;
+  --color-raised: #f7f9fc;
+  --color-hover: #e8eef6;
+
+  --color-line: #dde5ef;
+  --color-line-strong: #bfcbdb;
+
+  --color-ink: #0d1522;
+  --color-ink-muted: #4c5b70;
+  --color-ink-faint: #71809a;
+  --color-ink-strong: #01060d;
+
+  /* Contrast on #ffffff: brand 5.4:1, violet 5.9:1, amber 4.6:1, rose 5.0:1, sky 4.6:1. */
+  --color-brand: #0f766e;
+  --color-brand-strong: #115e59;
+  --color-brand-ink: #ffffff;
+  --color-violet: #5a45d6;
+  --color-amber: #96570a;
+  --color-rose: #c62b47;
+  --color-sky: #0d6cb8;
+
+  --color-code: #f4f7fb;
+
+  /* No inset highlight on paper: white-on-white is invisible, so the sheen becomes a hairline. */
+  --sheen: rgb(15 23 42 / 0.04);
+  --sheen-strong: rgb(15 23 42 / 0.1);
+  --shade: rgb(15 23 42 / 0.1);
+  --shade-strong: rgb(15 23 42 / 0.18);
+  --scrim: rgb(15 23 42 / 0.45);
+  --glow-brand: rgb(15 118 110 / 0.22);
+  --glow-amber: rgb(150 87 10 / 0.16);
+  --glow-rose: rgb(198 43 71 / 0.18);
+  --glow-violet: rgb(90 69 214 / 0.16);
+  --glow-sky: rgb(13 108 184 / 0.16);
+  --grid-line: rgb(15 23 42 / 0.05);
+  --glass-top: rgb(255 255 255 / 0.9);
+  --glass-bottom: rgb(247 249 252 / 0.78);
+  --glass-border: rgb(15 23 42 / 0.08);
+}
+
+/*
+ * `light:` — an escape hatch for the handful of things a token cannot express.
+ *
+ * Almost everything follows the palette automatically, because it is spelled with a token. What
+ * does not is *intensity*: the aurora bloom behind the hero, for instance, is the same three
+ * accent hues in both themes, but at the alpha that suits a black page it reads as a smudge on a
+ * white one. `light:opacity-40` says that in one word instead of duplicating the element.
+ *
+ * `:where()` keeps the wrapper at zero specificity, so the utility itself decides who wins —
+ * the pattern Tailwind documents for `@custom-variant`. Reach for a token first; this is for
+ * when the value that has to change is not a colour.
+ */
+@custom-variant light (&:where(:root[data-theme="light"], :root[data-theme="light"] *));
+
 
 @keyframes shimmer {
   0%,
@@ -96,15 +207,29 @@
   }
 
   html {
+    /*
+     * Follows `data-theme` so the browser's own chrome — form controls, the scrollbar gutter,
+     * `Highlight` colours — matches the palette. Without a `data-theme` (no JavaScript) the
+     * declaration below still pins it to dark, which is the default palette.
+     */
     color-scheme: dark;
     -webkit-text-size-adjust: 100%;
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
   }
 
   body {
     background-color: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-feature-settings: "cv11", "ss01";
+    /*
+     * No `font-feature-settings` here. It used to request Inter's `cv11`/`ss01` alternates, which
+     * were inert while Inter was named but never downloaded; now that the face actually loads they
+     * would silently swap in a single-storey "a" and alternate digits. Inter's defaults are what
+     * "use Inter" is expected to look like, so that is what ships.
+     */
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
@@ -162,15 +287,61 @@
   box-shadow: var(--shadow-panel);
 }
 
+@utility panel-glass {
+  background: linear-gradient(180deg, var(--glass-top) 0%, var(--glass-bottom) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 1px 0 0 var(--sheen) inset, 0 12px 32px -12px var(--shade);
+}
+
+@utility glow-brand {
+  box-shadow: 0 0 28px -4px var(--glow-brand);
+}
+
+@utility glow-amber {
+  box-shadow: 0 0 28px -4px var(--glow-amber);
+}
+
 /* Faint grid backdrop used behind marketing + auth screens. */
 @utility grid-backdrop {
   background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.022) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.022) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 @utility numeric {
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
 }
+
+/*
+ * The theme toggle's two icons, switched by CSS rather than by React state.
+ *
+ * A toggle that decides its icon from `useState` has to render *something* on the server, and the
+ * server does not know the visitor's theme — so the first paint shows the wrong icon and then
+ * corrects itself. Both icons are always in the DOM instead and the palette decides which is
+ * visible, which means the button is correct on first paint and needs no hydration to look right.
+ * Each label carries the action, so a screen reader reads the visible one.
+ */
+@layer base {
+  .theme-icon-to-light {
+    display: block;
+  }
+
+  .theme-icon-to-dark {
+    display: none;
+  }
+
+  :root[data-theme="light"] .theme-icon-to-light {
+    display: none;
+  }
+
+  :root[data-theme="light"] .theme-icon-to-dark {
+    display: block;
+  }
+}
+
+

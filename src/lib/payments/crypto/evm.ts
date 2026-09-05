@@ -29,7 +29,8 @@
  */
 import "server-only";
 import { env } from "@/lib/env";
-import { fromBaseUnits, toBaseUnits } from "@/lib/payments/crypto/amount";
+import { fromBaseUnits, microUsdToBaseUnits, toBaseUnits } from "@/lib/payments/crypto/amount";
+import { UNLIMITED_PRICE_USD_LABEL, UNLIMITED_PRICE_USD_MICRO } from "@/lib/plans";
 import {
   CryptoProviderError,
   type CryptoPaymentProvider,
@@ -106,6 +107,13 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
  * Builds a configuration from the environment, or returns null when the deployment has not
  * been set up for crypto payments. Null is not an error: it is what lets the dashboard say
  * "payments are not enabled" instead of throwing on a page render.
+ *
+ * It is also how a **price disagreement** is handled. `CRYPTO_PAYMENT_AMOUNT` gates the chain and
+ * `UNLIMITED_PRICE_USD_MICRO` advertises to the payer; nothing in the type system ties them
+ * together, so raising one and forgetting the other would sell access at one price while
+ * accepting another — silently, and in the direction that loses money. When they disagree the
+ * whole rail goes dark instead. An operator sees "payments are not enabled", which is a visible
+ * problem, rather than a working checkout at the old price, which is an invisible one.
  */
 export function evmConfigFromEnv(): EvmConfig | null {
   const c = env.payments.crypto;
@@ -119,6 +127,11 @@ export function evmConfigFromEnv(): EvmConfig | null {
   let requiredBaseUnits: string;
   try {
     requiredBaseUnits = toBaseUnits(c.amount, c.assetDecimals);
+    // Both sides converted to the same integer unit before comparison — never a float, and
+    // never a comparison of the decimal strings, which would make "0.5" and "0.50" differ.
+    if (requiredBaseUnits !== microUsdToBaseUnits(UNLIMITED_PRICE_USD_MICRO, c.assetDecimals)) {
+      return null;
+    }
   } catch {
     // A malformed price must not be silently rounded into a live payment gate.
     return null;
@@ -230,7 +243,7 @@ export function createEvmProvider(config: EvmConfig): CryptoPaymentProvider {
     address: config.recipient,
     amount: config.amountDisplay,
     amountBaseUnits: config.requiredBaseUnits,
-    priceUsd: "0.10",
+    priceUsd: UNLIMITED_PRICE_USD_LABEL,
     minConfirmations: config.minConfirmations,
     explorerUrl: config.explorerUrl,
   };

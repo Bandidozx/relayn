@@ -85,9 +85,9 @@ export const env = {
      * operator keeps it and is never needed here. `address` is a public receiving address and
      * is deliberately the one payment value the browser is allowed to see.
      *
-     * `amount` is a decimal string in whole units of the asset ("0.10"), converted to base
+     * `amount` is a decimal string in whole units of the asset ("0.50"), converted to base
      * units with exact integer arithmetic — never a float, and never a market rate looked up
-     * at request time. For a stablecoin that makes $0.10 a fixed `100000` base units.
+     * at request time. For a stablecoin that makes $0.50 a fixed `500000` base units.
      */
     crypto: {
       /** Chain slug. Must name an entry in `EVM_NETWORKS`; "" disables crypto payments. */
@@ -100,8 +100,13 @@ export const env = {
       assetDecimals: int("CRYPTO_PAYMENT_ASSET_DECIMALS", 6),
       /** Public receiving address. Rendered to the payer; holds no authority here. */
       address: str("CRYPTO_PAYMENT_ADDRESS"),
-      /** Price in whole units of the asset, as a decimal string. "0.10" = $0.10 in USDC. */
-      amount: str("CRYPTO_PAYMENT_AMOUNT", "0.10"),
+      /**
+       * Price in whole units of the asset, as a decimal string. "0.50" = $0.50 in USDC.
+       *
+       * Must agree with `UNLIMITED_PRICE_USD_MICRO`, the price the UI advertises;
+       * `evmConfigFromEnv()` disables the rail when it does not.
+       */
+      amount: str("CRYPTO_PAYMENT_AMOUNT", "0.50"),
       /** JSON-RPC endpoint. The primary source of truth; falls back to the network default. */
       rpcUrl: str("CRYPTO_PAYMENT_RPC_URL"),
       /** Confirmations required before a transfer counts. Base blocks are ~2s. */

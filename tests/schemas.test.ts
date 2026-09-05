@@ -25,7 +25,7 @@ import { anthropicMessagesSchema, chatCompletionSchema } from "@/lib/gateway/sch
 describe("self-serve plan changes", () => {
   it("have no schema, so no request body can name a plan", async () => {
     // `changePlanSchema` backed PATCH /api/subscription for the Free/Pro/Business picker. The
-    // picker is gone and $0.10 unlimited is the only thing on offer, so the shape that let a
+    // picker is gone and $0.50 unlimited is the only thing on offer, so the shape that let a
     // caller name their own tier was deleted rather than narrowed.
     const schemas: Record<string, unknown> = await import("@/lib/api/schemas");
     expect("changePlanSchema" in schemas).toBe(false);

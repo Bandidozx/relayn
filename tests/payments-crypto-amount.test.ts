@@ -10,16 +10,23 @@ import {
   AmountFormatError,
   formatAssetAmount,
   fromBaseUnits,
+  microUsdToBaseUnits,
   normalizeTxHash,
   parseBaseUnits,
   toBaseUnits,
 } from "@/lib/payments/crypto/amount";
+import { UNLIMITED_PRICE_USD_MICRO } from "@/lib/plans";
 
 const HASH = "0x" + "ab".repeat(32);
 
 describe("toBaseUnits", () => {
-  it("converts the configured $0.10 price to exactly 100000 USDC base units", () => {
-    // The whole point: 0.1 * 1e6 is 100000.00000000001 in IEEE-754. This must be an integer.
+  it("converts the configured $0.50 price to exactly 500000 USDC base units", () => {
+    expect(toBaseUnits("0.50", 6)).toBe("500000");
+    expect(toBaseUnits("0.5", 6)).toBe("500000");
+  });
+
+  it("keeps a price that IEEE-754 cannot hold exact", () => {
+    // The whole point: 0.1 * 1e6 is 100000.00000000001 as a float. This must be an integer.
     expect(toBaseUnits("0.10", 6)).toBe("100000");
     expect(toBaseUnits("0.1", 6)).toBe("100000");
   });
@@ -46,6 +53,37 @@ describe("toBaseUnits", () => {
     expect(() => toBaseUnits("1", -1)).toThrow(AmountFormatError);
     expect(() => toBaseUnits("1", 37)).toThrow(AmountFormatError);
     expect(() => toBaseUnits("1", 1.5)).toThrow(AmountFormatError);
+  });
+});
+
+describe("microUsdToBaseUnits", () => {
+  it("expresses the advertised price in the asset's base units", () => {
+    expect(microUsdToBaseUnits(UNLIMITED_PRICE_USD_MICRO, 6)).toBe("500000");
+    // Same figure, deeper asset: the scale changes, the value does not.
+    expect(microUsdToBaseUnits(UNLIMITED_PRICE_USD_MICRO, 18)).toBe("500000000000000000");
+    expect(microUsdToBaseUnits(UNLIMITED_PRICE_USD_MICRO, 2)).toBe("50");
+    expect(microUsdToBaseUnits(1_000_000, 6)).toBe("1000000");
+  });
+
+  it("agrees with toBaseUnits, which is what makes the boot-time price check meaningful", () => {
+    expect(microUsdToBaseUnits(UNLIMITED_PRICE_USD_MICRO, 6)).toBe(toBaseUnits("0.50", 6));
+    // "0.5" and "0.50" are the same money. Comparing the decimal strings would miss that.
+    expect(microUsdToBaseUnits(UNLIMITED_PRICE_USD_MICRO, 6)).toBe(toBaseUnits("0.5", 6));
+    expect(microUsdToBaseUnits(100_000, 6)).toBe(toBaseUnits("0.10", 6));
+  });
+
+  it("refuses to round a price the asset cannot hold", () => {
+    // A tenth of a cent in a 2-decimal token. Rounding here would mis-price a live gate.
+    expect(() => microUsdToBaseUnits(100_500, 2)).toThrow(AmountFormatError);
+    expect(() => microUsdToBaseUnits(1, 0)).toThrow(AmountFormatError);
+  });
+
+  it("rejects a non-positive or fractional price, and unusable decimals", () => {
+    for (const bad of [0, -500_000, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => microUsdToBaseUnits(bad, 6), String(bad)).toThrow(AmountFormatError);
+    }
+    expect(() => microUsdToBaseUnits(500_000, -1)).toThrow(AmountFormatError);
+    expect(() => microUsdToBaseUnits(500_000, 37)).toThrow(AmountFormatError);
   });
 });
 
@@ -82,8 +120,8 @@ describe("parseBaseUnits", () => {
 });
 
 describe("formatAssetAmount", () => {
-  it('renders 0.10 next to a "$0.10" price rather than 0.1', () => {
-    expect(formatAssetAmount("100000", 6)).toBe("0.10");
+  it('renders 0.50 next to a "$0.50" price rather than 0.5', () => {
+    expect(formatAssetAmount("500000", 6)).toBe("0.50");
   });
 
   it("marks a truncated remainder so a rounded figure never reads as exact", () => {

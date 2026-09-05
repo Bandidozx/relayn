@@ -206,7 +206,13 @@ export function IntegrationsWorkbench({
         </CardBody>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      {/* `grid-cols-1` is load-bearing. Below `xl` this grid has a single implicit track, which is
+          sized `auto` and so takes its minimum from its content — and each card holds a `CodeTabs`
+          whose `<pre>` only scrolls once something upstream has clamped its width. Without the
+          clamp the track grew to the longest snippet line (~706px), both cards grew with it, and
+          the page scrolled sideways on a phone. `grid-cols-1` compiles to the missing
+          `repeat(1, minmax(0, 1fr))`. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader
             title="Streaming"

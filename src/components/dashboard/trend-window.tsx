@@ -26,6 +26,8 @@ import {
   formatPercent,
 } from "@/lib/format";
 import type { TrendWindow, WindowMetrics } from "@/lib/usage/window-types";
+import { resolveVendor } from "@/lib/vendor";
+import { VendorMark } from "@/components/models/vendor-mark";
 
 interface TrendWindowState {
   days: TrendWindow;
@@ -73,7 +75,7 @@ export function TrendWindowSwitcher() {
   const { days, setDays, options } = useTrendWindow();
 
   return (
-    <div className="flex gap-1 rounded-lg border border-line p-0.5">
+    <div className="flex gap-1 rounded-xl border border-line/70 bg-surface/80 p-1 backdrop-blur-md shadow-sm">
       {options.map((option) => (
         <button
           key={option}
@@ -82,8 +84,8 @@ export function TrendWindowSwitcher() {
           aria-current={option === days ? "true" : undefined}
           className={
             option === days
-              ? "rounded-md bg-brand/15 px-2.5 py-1 text-[11px] font-medium text-brand"
-              : "rounded-md px-2.5 py-1 text-[11px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
+              ? "rounded-lg bg-brand/15 px-3 py-1 text-xs font-semibold text-brand shadow-sm"
+              : "rounded-lg px-3 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-hover hover:text-ink"
           }
         >
           {option}d
@@ -144,27 +146,40 @@ export function TopModelsCard() {
           description="Model usage appears here after your first successful call."
         />
       ) : (
-        <CardBody className="space-y-3">
+        <CardBody className="space-y-2.5">
           {models.map((model) => {
             const share =
               models[0]!.totalTokens === 0 ? 0 : (model.totalTokens / models[0]!.totalTokens) * 100;
+            const vendor = resolveVendor(model.modelId, "unknown");
             return (
-              <div key={model.modelId}>
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="numeric truncate text-xs text-ink">{model.modelId}</p>
-                  <p className="numeric shrink-0 text-[11px] text-ink-muted">
+              <div
+                key={model.modelId}
+                className="group rounded-xl border border-line/50 bg-canvas/30 p-2.5 transition-colors hover:border-line hover:bg-canvas/50"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <VendorMark vendor={vendor} size="sm" />
+                    <p className="numeric truncate text-xs font-semibold text-ink group-hover:text-ink-strong transition-colors">
+                      {model.modelId}
+                    </p>
+                  </div>
+                  <p className="numeric shrink-0 text-xs font-bold text-brand">
                     {formatCompact(model.totalTokens)}
                   </p>
                 </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-line">
-                  <div className="h-full rounded-full bg-brand/70" style={{ width: `${share}%` }} />
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line/80">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-brand-strong to-brand shadow-[0_0_8px_var(--glow-brand)] transition-all duration-300"
+                    style={{ width: `${share}%` }}
+                  />
                 </div>
-                <p className="mt-1 text-[10.5px] text-ink-faint">
-                  {formatNumber(model.requests)} requests · {formatLatency(model.avgLatencyMs)} avg
-                  {model.errorRate > 0 ? ` · ${formatPercent(model.errorRate * 100, 0)} errors` : ""}
-                  {" · "}
-                  {formatMicroUsd(model.costMicroUsd)}
-                </p>
+                <div className="mt-1.5 flex items-center justify-between text-[10.5px] text-ink-faint">
+                  <span>
+                    {formatNumber(model.requests)} requests · {formatLatency(model.avgLatencyMs)} avg
+                    {model.errorRate > 0 ? ` · ${formatPercent(model.errorRate * 100, 0)} errors` : ""}
+                  </span>
+                  <span className="font-mono text-ink-muted">{formatMicroUsd(model.costMicroUsd)}</span>
+                </div>
               </div>
             );
           })}

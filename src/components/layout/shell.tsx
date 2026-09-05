@@ -12,6 +12,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/layout/brand";
 import { NAV_ITEMS, SECONDARY_NAV_ITEMS, type NavItem } from "@/components/layout/nav";
 import { useToast } from "@/components/ui/toast";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { api } from "@/lib/client/api";
 import { cn } from "@/lib/cn";
 import { formatCompact, formatDate, formatPercent } from "@/lib/format";
@@ -49,16 +50,18 @@ function NavLink({ item, active, onNavigate }: { item: NavItem; active: boolean;
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
+        "group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-200",
         active
-          ? "bg-brand/10 font-medium text-brand"
+          ? "bg-brand/15 text-brand shadow-[inset_0_1px_0_var(--sheen),0_2px_8px_-2px_var(--glow-brand)]"
           : "text-ink-muted hover:bg-hover hover:text-ink",
       )}
     >
       {active ? (
-        <span className="absolute top-1/2 -left-2.5 h-4 w-0.5 -translate-y-1/2 rounded-full bg-brand" aria-hidden />
+        <span className="absolute top-1/2 -left-2 h-4 w-1 -translate-y-1/2 rounded-full bg-brand shadow-[0_0_8px_var(--color-brand)]" aria-hidden />
       ) : null}
-      {item.icon}
+      <span className={cn("transition-transform duration-200 group-hover:scale-110", active ? "text-brand" : "text-ink-faint group-hover:text-ink")}>
+        {item.icon}
+      </span>
       <span className="truncate">{item.label}</span>
     </Link>
   );
@@ -66,62 +69,69 @@ function NavLink({ item, active, onNavigate }: { item: NavItem; active: boolean;
 
 function QuotaCard({ quota }: { quota: ShellQuota }) {
   const pct = Math.min(100, Math.max(0, quota.percentUsed));
-  const tone = pct >= 90 ? "bg-rose" : pct >= 70 ? "bg-amber" : "bg-brand";
+  /* Palette tokens on both stops — see the identical bar on the dashboard for why. */
+  const barGradient =
+    pct >= 90
+      ? "from-rose/85 to-rose shadow-[0_0_10px_var(--glow-rose)]"
+      : pct >= 70
+        ? "from-amber/85 to-amber shadow-[0_0_10px_var(--glow-amber)]"
+        : "from-brand-strong to-brand shadow-[0_0_10px_var(--glow-brand)]";
 
   return (
-    <div className="rounded-xl border border-line bg-raised/60 p-3">
+    <div className="rounded-2xl border border-line/70 bg-gradient-to-b from-raised/80 to-raised/40 p-3.5 backdrop-blur-sm shadow-[inset_0_1px_0_var(--sheen)]">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-medium tracking-wide text-ink-faint uppercase">
-          {quota.unlimited ? "Access" : "Token allocation"}
+        <p className="text-[10.5px] font-semibold tracking-wider text-ink-faint uppercase">
+          {quota.unlimited ? "Access" : "Token Quota"}
         </p>
-        <span className="rounded-full border border-line-strong px-1.5 py-0.5 text-[10px] text-ink-muted">
+        <span className="rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
           {quota.planName}
         </span>
       </div>
 
       {quota.unlimited ? (
-        // No bar and no reset date: there is no ceiling to fill and nothing to renew. The
-        // lifetime total is the only usage figure such an account has.
         <>
-          <p className="mt-2 text-sm font-medium text-brand">Unlimited</p>
-          <p className="numeric mt-1 text-[10.5px] text-ink-faint">
+          <p className="mt-2 text-sm font-semibold text-brand">Unlimited Access</p>
+          <p className="numeric mt-1 text-[11px] text-ink-muted">
             {formatCompact(quota.used)} tokens used all-time
           </p>
-          <p className="mt-0.5 text-[10.5px] text-ink-faint">Permanent — no renewal</p>
+          <p className="mt-0.5 text-[10.5px] text-ink-faint">Permanent plan · no renewal</p>
         </>
       ) : (
         <>
-          <p className="numeric mt-2 text-sm text-ink">
-            {formatCompact(quota.remaining)}
-            <span className="text-ink-faint"> / {formatCompact(quota.allocation)} left</span>
-          </p>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="numeric text-sm font-semibold text-ink">
+              {formatCompact(quota.remaining)}
+            </span>
+            <span className="numeric text-[11px] text-ink-faint">
+              of {formatCompact(quota.allocation)} left
+            </span>
+          </div>
 
           <div
-            className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"
+            className="mt-2 h-1.5 overflow-hidden rounded-full bg-line/80"
             role="progressbar"
             aria-valuenow={Math.round(pct)}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-label="Monthly token allocation used"
           >
-            <div className={cn("h-full rounded-full transition-all", tone)} style={{ width: `${pct}%` }} />
+            <div
+              className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-500", barGradient)}
+              style={{ width: `${pct}%` }}
+            />
           </div>
 
           <div className="mt-2 flex items-center justify-between text-[10.5px] text-ink-faint">
-            <span className="numeric">{formatPercent(pct, 0)} used</span>
-            <span>resets {formatDate(quota.renewalDate)}</span>
+            <span className="numeric font-medium text-ink-muted">{formatPercent(pct, 0)} used</span>
+            <span>Resets {formatDate(quota.renewalDate)}</span>
           </div>
         </>
       )}
 
       <Link
         href="/subscription"
-        className="mt-2.5 block rounded-lg border border-line-strong py-1.5 text-center text-[11px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
+        className="mt-3 block rounded-xl border border-line-strong/80 py-1.5 text-center text-[11px] font-medium text-ink-muted transition-all duration-200 hover:border-ink-faint hover:bg-hover hover:text-ink"
       >
-        {/*
-         * Not "Manage plan": there is no plan ladder to manage. A metered account's only move is
-         * the one-time Unlimited purchase, so the label names that instead of implying a chooser.
-         */}
         {quota.unlimited ? "View access" : "Go unlimited"}
       </Link>
     </div>
@@ -143,13 +153,13 @@ function AccountCard({ user, onSignOut, signingOut }: { user: ShellUser; onSignO
       {open ? (
         <div
           role="menu"
-          className="panel animate-rise absolute bottom-full left-0 z-30 mb-2 w-full overflow-hidden p-1 shadow-pop"
+          className="panel-glass animate-rise absolute bottom-full left-0 z-30 mb-2 w-full overflow-hidden p-1.5 shadow-pop"
         >
           <Link
             href="/profile"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block rounded-lg px-2.5 py-2 text-xs text-ink-muted transition-colors hover:bg-hover hover:text-ink"
+            className="block rounded-lg px-3 py-2 text-xs font-medium text-ink-muted transition-colors hover:bg-hover hover:text-ink"
           >
             Profile settings
           </Link>
@@ -157,16 +167,16 @@ function AccountCard({ user, onSignOut, signingOut }: { user: ShellUser; onSignO
             href="/subscription"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block rounded-lg px-2.5 py-2 text-xs text-ink-muted transition-colors hover:bg-hover hover:text-ink"
+            className="block rounded-lg px-3 py-2 text-xs font-medium text-ink-muted transition-colors hover:bg-hover hover:text-ink"
           >
-            Subscription
+            Subscription & billing
           </Link>
           <button
             type="button"
             role="menuitem"
             onClick={onSignOut}
             disabled={signingOut}
-            className="mt-0.5 block w-full rounded-lg border-t border-line px-2.5 py-2 text-left text-xs text-rose transition-colors hover:bg-rose/10 disabled:opacity-60"
+            className="mt-1 block w-full rounded-lg border-t border-line/60 px-3 py-2 text-left text-xs font-medium text-rose transition-colors hover:bg-rose/10 disabled:opacity-60"
           >
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
@@ -178,20 +188,24 @@ function AccountCard({ user, onSignOut, signingOut }: { user: ShellUser; onSignO
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-raised/60 p-2.5 text-left transition-colors hover:bg-hover"
+        className="flex w-full items-center gap-2.5 rounded-2xl border border-line/70 bg-raised/50 p-2.5 text-left transition-all duration-200 hover:border-line-strong hover:bg-hover hover:shadow-md"
       >
         <span
-          className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand/15 text-[11px] font-semibold text-brand"
+          className="grid size-8 shrink-0 place-items-center rounded-xl border border-brand/30 bg-brand/15 text-[11px] font-bold text-brand shadow-[0_0_10px_-2px_var(--glow-brand)]"
           aria-hidden
         >
           {initials(user.name, user.email)}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-ink">{user.name}</span>
+          <span className="block truncate text-xs font-semibold text-ink">{user.name}</span>
           <span className="block truncate text-[11px] text-ink-faint">{user.email}</span>
         </span>
-        <svg viewBox="0 0 16 16" className="size-3.5 shrink-0 text-ink-faint" aria-hidden>
-          <path d="M5 10l3-3 3 3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <svg
+          viewBox="0 0 16 16"
+          className={cn("size-3.5 shrink-0 text-ink-faint transition-transform duration-200", open && "rotate-180")}
+          aria-hidden
+        >
+          <path d="M5 6l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       </button>
     </div>
@@ -223,6 +237,28 @@ export function DashboardShell({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
+
+  /*
+   * Freeze the page while the drawer is open.
+   *
+   * Without this the scrim is only visually opaque: a touch-drag anywhere on it scrolls the
+   * dashboard underneath, so closing the drawer drops the reader somewhere they never chose to
+   * be. Desktop has no such problem — the drawer does not exist there — but the fix is cheap and
+   * `lg:hidden` already keeps the two apart.
+   *
+   * `overflow: hidden` on `<html>` rather than `<body>`: iOS Safari ignores it on `body` in a
+   * `min-h-dvh` layout. The previous value is restored rather than blanked, so the lock composes
+   * with anything else that sets it and unwinds cleanly if the drawer unmounts mid-navigation.
+   */
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const root = document.documentElement;
+    const previous = root.style.overflow;
+    root.style.overflow = "hidden";
+    return () => {
+      root.style.overflow = previous;
+    };
   }, [drawerOpen]);
 
   async function signOut() {
@@ -282,7 +318,7 @@ export function DashboardShell({
       {drawerOpen ? (
         <div className="fixed inset-0 z-80 lg:hidden">
           <div
-            className="animate-fade absolute inset-0 bg-black/70 backdrop-blur-sm"
+            className="animate-fade absolute inset-0 bg-[var(--scrim)] backdrop-blur-sm"
             onClick={() => setDrawerOpen(false)}
             aria-hidden
           />
@@ -322,6 +358,7 @@ export function DashboardShell({
             <span className="hidden max-w-50 truncate text-xs text-ink-muted md:block">
               {user.email}
             </span>
+            <ThemeToggle />
             {user.role === "admin" ? (
               <Link
                 href="/admin"

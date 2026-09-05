@@ -71,7 +71,11 @@ export function CopyButton({
       aria-label={copied ? "Copied" : label}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-raised text-xs transition-colors hover:bg-hover",
-        compact ? "size-7 justify-center" : "px-2.5 py-1.5",
+        // `shrink-0`: the compact variant is a 28x28 icon square, but as a flex item its
+        // `min-width: auto` resolves to the 14px glyph, so a cramped row (the wallet-address pill
+        // on /subscription at 375px) squashed it to 16x28 — visibly lopsided and under the 24px
+        // pointer-target floor. `size-7` states the intent; this stops flex from overriding it.
+        compact ? "size-7 shrink-0 justify-center" : "px-2.5 py-1.5",
         copied && "border-brand/40 text-brand",
         className,
       )}

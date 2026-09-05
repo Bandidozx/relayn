@@ -208,7 +208,11 @@ export function UsageExplorer({
             </div>
           }
         />
-        <div className="grid gap-2.5 border-b border-line px-4 py-4 sm:grid-cols-2 xl:grid-cols-6">
+        {/* `grid-cols-1` is not the default: with no unprefixed `grid-cols-*` the single implicit
+            track is sized `auto`, which takes its minimum from the widest child — so the search
+            field's placeholder pushed the filter row a few pixels past the card and the page
+            scrolled sideways on a phone. `grid-cols-1` compiles to `repeat(1, minmax(0, 1fr))`. */}
+        <div className="grid grid-cols-1 gap-2.5 border-b border-line px-4 py-4 sm:grid-cols-2 xl:grid-cols-6">
           <div className="sm:col-span-2">
             <label htmlFor="usage-search" className="sr-only">
               Search requests

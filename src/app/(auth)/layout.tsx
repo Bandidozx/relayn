@@ -5,6 +5,7 @@
  */
 import { redirect } from "next/navigation";
 import { Brand } from "@/components/layout/brand";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { getSession } from "@/lib/auth/session";
 
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -15,9 +16,14 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
     <div className="grid-backdrop flex min-h-dvh flex-col">
       <header className="flex items-center justify-between px-5 py-5 sm:px-8">
         <Brand href="/" />
-        <a href="/#api" className="text-xs text-ink-muted transition-colors hover:text-ink">
-          See the API →
-        </a>
+        <div className="flex items-center gap-3">
+          <a href="/#api" className="text-xs text-ink-muted transition-colors hover:text-ink">
+            See the API →
+          </a>
+          {/* Before there is an account there is no preference to store server-side, so the
+              switch has to be reachable from the sign-in screen too. */}
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-6 sm:px-6">

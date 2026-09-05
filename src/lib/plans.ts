@@ -62,23 +62,36 @@ export const UNLIMITED_PLAN_ID = "unlimited" as const;
  * This constant is the single source of truth for three places that must agree: the amount
  * sent to the payment provider, the amount the webhook demands before activating anything,
  * and the price the UI advertises. A client never supplies an amount.
+ *
+ * **Stale by design, pending an operator decision.** This is the QRIS rail's price, and QRIS is
+ * paused (no TriPay credentials are configured), so nothing is sold at this figure today. It was
+ * set when the product cost $0.10 and has deliberately not been scaled alongside
+ * `UNLIMITED_PRICE_USD_MICRO` — what Rp5.000 should become is a pricing decision, not a unit
+ * conversion. Re-enabling TriPay without revisiting this number would sell $0.50 of access for
+ * the old rupiah price.
  */
 export const UNLIMITED_PRICE_IDR = 5_000;
 
 /**
  * The one-time price in **micro-USD** (millionths of a dollar), decided entirely server-side.
  *
- * $0.10 = 100,000 micro-USD. The unit matches `UsageLog.costMicroUsd` and `formatMicroUsd`, so
+ * $0.50 = 500,000 micro-USD. The unit matches `UsageLog.costMicroUsd` and `formatMicroUsd`, so
  * the whole codebase has one integer money representation and no float arithmetic on prices.
  *
  * This is the figure the crypto payment rail is priced at. It is *not* the on-chain amount:
  * converting it into token base units is `CRYPTO_PAYMENT_AMOUNT`'s job, configured as a fixed
- * decimal string ("0.10" USDC) precisely so no market rate is ever consulted at request time.
+ * decimal string ("0.50" USDC) precisely so no market rate is ever consulted at request time.
+ *
+ * Those two are separate authorities — one advertises, the other gates — so they are reconciled
+ * explicitly at boot by `evmConfigFromEnv()`, which disables the rail outright when the amount an
+ * operator configured does not match the price this constant advertises. Raising the price here
+ * without raising `CRYPTO_PAYMENT_AMOUNT` therefore turns crypto payments off rather than
+ * quietly selling $0.50 of access for $0.10.
  */
-export const UNLIMITED_PRICE_USD_MICRO = 100_000;
+export const UNLIMITED_PRICE_USD_MICRO = 500_000;
 
 /** The advertised price. One string, so the UI and the plan card cannot disagree. */
-export const UNLIMITED_PRICE_USD_LABEL = "$0.10";
+export const UNLIMITED_PRICE_USD_LABEL = "$0.50";
 
 /**
  * Nominal allocation stored on an unlimited subscription row.

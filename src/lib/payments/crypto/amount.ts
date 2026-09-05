@@ -6,7 +6,7 @@
  * precision outright. A payment gate that compares amounts must not be built on either.
  *
  * These functions are also the reason the configured price can be written the way an operator
- * would naturally write it (`CRYPTO_PAYMENT_AMOUNT="0.10"`) without the ambiguity of "is that
+ * would naturally write it (`CRYPTO_PAYMENT_AMOUNT="0.50"`) without the ambiguity of "is that
  * whole units or base units?" — the conversion is explicit, and over-precise input is an error
  * rather than a silent truncation.
  */
@@ -22,7 +22,7 @@ export class AmountFormatError extends Error {
 const DECIMAL = /^(\d+)(?:\.(\d+))?$/;
 
 /**
- * `"0.10"`, 6 → `"100000"`.
+ * `"0.50"`, 6 → `"500000"`.
  *
  * Rejects a fraction longer than the asset supports rather than rounding it: an operator who
  * writes `0.1000005` for a 6-decimal token has made a mistake worth surfacing at boot, not a
@@ -52,6 +52,40 @@ export function toBaseUnits(amount: string, decimals: number): string {
   return value.toString();
 }
 
+/**
+ * Micro-USD → base units of a dollar-pegged asset. `500_000`, 6 → `"500000"`.
+ *
+ * Exists so the price the UI advertises (`UNLIMITED_PRICE_USD_MICRO`) and the amount the chain
+ * gate demands (`CRYPTO_PAYMENT_AMOUNT`) can be compared as integers. Those are two independent
+ * authorities; without a comparison they can drift, and the drift is silent in the worst
+ * direction — advertising one price while accepting another.
+ *
+ * The conversion assumes one whole unit of the asset is worth one dollar, which is the assumption
+ * the whole rail rests on: a stablecoin is required precisely so a price can be a fixed token
+ * amount rather than a quote read at request time.
+ *
+ * Throws when the price cannot be expressed in the asset's decimals — a 2-decimal token has no
+ * room for a tenth of a cent — because rounding a price into a live payment gate is worse than
+ * refusing to open the gate.
+ */
+export function microUsdToBaseUnits(microUsd: number, decimals: number): string {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new AmountFormatError(`Unsupported decimals: ${decimals}`);
+  }
+  if (!Number.isInteger(microUsd) || microUsd <= 0) {
+    throw new AmountFormatError(`Price must be a positive whole number of micro-USD: ${microUsd}`);
+  }
+  const value = BigInt(microUsd);
+  if (decimals >= 6) return (value * 10n ** BigInt(decimals - 6)).toString();
+  const divisor = 10n ** BigInt(6 - decimals);
+  if (value % divisor !== 0n) {
+    throw new AmountFormatError(
+      `${microUsd} micro-USD cannot be expressed in ${decimals} decimals without rounding.`,
+    );
+  }
+  return (value / divisor).toString();
+}
+
 /** `"100000"`, 6 → `"0.1"`. Trailing fractional zeros are dropped. */
 export function fromBaseUnits(baseUnits: string, decimals: number): string {
   const value = parseBaseUnits(baseUnits);
@@ -78,7 +112,7 @@ export function parseBaseUnits(value: string | null | undefined): bigint {
 
 /**
  * Formats a base-unit amount for display with a fixed number of fractional digits, so
- * "0.1 USDC" reads as "0.10 USDC" next to a "$0.10" price.
+ * "0.5 USDC" reads as "0.50 USDC" next to a "$0.50" price.
  */
 export function formatAssetAmount(baseUnits: string, decimals: number, digits = 2): string {
   const value = parseBaseUnits(baseUnits);
