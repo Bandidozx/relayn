@@ -121,9 +121,14 @@ export function PlanPicker({ initial }: { initial: SubscriptionPayload }) {
               </dl>
 
               {isCurrent ? (
-                <Button variant="secondary" size="sm" disabled>
-                  Your plan
-                </Button>
+                /*
+                 * The current plan gets no button. A disabled control that only restates the
+                 * "Current" badge above it is a dead target — it reads as something that ought to
+                 * be clickable and is not. The spacer keeps this card's Allocation/Rate-limit row
+                 * on the same baseline as its neighbours', so removing the control does not knock
+                 * the grid out of alignment; `h-8` is the `sm` button height.
+                 */
+                <div aria-hidden="true" className="h-8" />
               ) : plan.selfServe ? (
                 <Button
                   variant={isUpgrade ? "primary" : "outline"}

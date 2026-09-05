@@ -26,11 +26,14 @@ export interface Vendor {
   /**
    * Colour of the tile's glyph, background tint and border.
    *
-   * A hex here is an authentic third-party brand colour, and is only ever paired with an
-   * authentic mark. Vendors we do not ship a mark for use a Relayn palette token instead:
-   * guessing a brand colour would assert something unverified, and the palette keeps the grid
-   * coherent. This is the one place in the app where a literal hex is legitimate — these are
-   * other companies' colours, not theme values, so they do not belong in `globals.css`.
+   * A hex here is an authentic third-party brand colour, so it may only appear on a vendor whose
+   * real logo we ship. The reverse does not hold: a vendor can have a real logo and still wear a
+   * Relayn palette token, which is what happens when the published colour is black — readable on
+   * the brand's own white page, invisible on this card. What never happens is a guessed hex, since
+   * that would assert something unverified.
+   *
+   * This is the one place in the app where a literal hex is legitimate: these are other
+   * companies' colours, not theme values, so they do not belong in `globals.css`.
    */
   color: string;
   /** 1–3 characters, rendered when no SVG mark exists for `slug`. */
@@ -50,13 +53,19 @@ const PALETTE = [
 ] as const;
 
 /*
- * Vendors we ship an authentic mark for, so the tile carries the real brand colour.
+ * Vendors we ship an authentic mark for.
  *
- * Two of these are lightened from the published brand value: OpenAI's #412991 and Baidu's
- * #2932E1 both fall to roughly 2:1 against `--color-surface`, which is unreadable. Brands
- * publish dark-mode variants for exactly this reason; every colour below clears 4.5:1 on the
- * card surface. Marks come from simple-icons (CC0), vendored into `vendor-marks.ts` as path
- * data rather than fetched, so the grid renders offline and never emits a 404 per card.
+ * A literal hex is a published brand colour, so it may only ever appear next to a real logo. Four
+ * are lifted in lightness from the published value because they do not survive a dark card:
+ * OpenAI's #412991 (1.7:1 against `--color-surface`) and Baidu's #2932E1 (2.2:1) are unreadable,
+ * and Meta's #0467DF (3.4:1) and Qwen's #6950EF (3.4:1) miss 4.5:1. MiniMax's #E73562 lands at
+ * 4.31:1, close enough to lift by a hair rather than replace. Hue and saturation are preserved in
+ * each case; brands publish dark-mode variants for exactly this reason. `tests/vendor.test.ts`
+ * recomputes every ratio against the real token, so a future edit cannot quietly drop below it.
+ *
+ * Two vendors keep a Relayn colour despite having a real mark: Kimi and Z.ai both publish a
+ * monochrome black logo, and black on a dark card is nothing at all. Marks are generated into
+ * `vendor-marks.ts` by `scripts/generate-vendor-marks.mjs` — see that file for sources.
  */
 const MARKED: VendorRule[] = [
   {
@@ -112,19 +121,31 @@ const MARKED: VendorRule[] = [
     match: ["doubao", "bytedance", "seed-"],
   },
   { slug: "baidu", label: "Baidu ERNIE", color: "#7B82FF", initials: "BA", match: ["ernie", "baidu"] },
+  { slug: "deepseek", label: "DeepSeek", color: "#5786FE", initials: "DS", match: ["deepseek"] },
+  { slug: "minimax", label: "MiniMax", color: "#E9456F", initials: "MM", match: ["minimax"] },
+  {
+    slug: "moonshot",
+    label: "Moonshot Kimi",
+    color: PALETTE[1],
+    initials: "KI",
+    match: ["kimi", "moonshot"],
+  },
+  {
+    slug: "qwen",
+    label: "Alibaba Qwen",
+    color: "#8470F2",
+    initials: "QW",
+    match: ["qwen", "qwq", "tongyi"],
+  },
+  { slug: "zai", label: "Z.ai GLM", color: PALETTE[0], initials: "GL", match: ["glm", "z-ai", "zhipu"] },
 ];
 
 /*
- * Vendors with no mark available under a licence we can vendor. These get a monogram in a
- * Relayn palette colour rather than a guessed brand colour — and deliberately never amber,
- * which this page already spends on the "needs a higher plan" state.
+ * Vendors with no mark available in either source. These get a monogram in a Relayn palette
+ * colour rather than a guessed brand colour — and deliberately never amber, which this page
+ * already spends on the "needs a higher plan" state.
  */
 const UNMARKED: VendorRule[] = [
-  { slug: "deepseek", label: "DeepSeek", color: PALETTE[2], initials: "DS", match: ["deepseek"] },
-  { slug: "moonshot", label: "Moonshot Kimi", color: PALETTE[1], initials: "KI", match: ["kimi", "moonshot"] },
-  { slug: "minimax", label: "MiniMax", color: PALETTE[3], initials: "MM", match: ["minimax"] },
-  { slug: "zai", label: "Z.ai GLM", color: PALETTE[0], initials: "GL", match: ["glm", "z-ai", "zhipu"] },
-  { slug: "qwen", label: "Alibaba Qwen", color: PALETTE[1], initials: "QW", match: ["qwen", "qwq", "tongyi"] },
   { slug: "xai", label: "xAI Grok", color: "var(--color-ink-muted)", initials: "XA", match: ["grok", "x-ai"] },
   { slug: "microsoft", label: "Microsoft", color: PALETTE[2], initials: "MS", match: ["phi-", "wizardlm"] },
   { slug: "tencent", label: "Tencent Hunyuan", color: PALETTE[0], initials: "HY", match: ["hunyuan", "tencent"] },
