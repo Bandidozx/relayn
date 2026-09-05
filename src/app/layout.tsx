@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import Script from "next/script";
 import { ToastProvider } from "@/components/ui/toast";
 import { env } from "@/lib/env";
 import "./globals.css";
@@ -32,19 +31,31 @@ const jetbrainsMono = JetBrains_Mono({
 /**
  * Resolves the palette before the first paint.
  *
- * This runs as a blocking inline script rather than in a `useEffect` because the alternative is a
+ * This runs as a synchronous inline script rather than in a `useEffect` because the alternative is a
  * visible flash: the server cannot know a visitor's theme, so any React-driven answer arrives one
  * paint too late and a light-mode visitor watches the page start black. Reading `localStorage`
- * synchronously, before the document body is parsed, means the correct palette is in place before
- * anything is drawn — at the cost of one attribute React must be told not to diff
- * (`suppressHydrationWarning` on `<html>`).
+ * synchronously, as the first thing inside `<body>`, means the correct palette is in place before
+ * any content after it is parsed — so before anything is drawn — at the cost of one attribute React
+ * must be told not to diff (`suppressHydrationWarning` on `<html>`).
  *
- * It is a `next/script` with `strategy="beforeInteractive"` rather than a bare `<script>` in the
- * tree for two reasons. Next hoists it into `<head>` regardless of where it sits in the component,
- * which is earlier than a `<script>` authored as the first child of `<body>` can be. And React
- * warns about raw script tags inside components — correctly, since they do not execute on client
- * navigation — which put a warning in the console on every page. The script only ever needs to run
- * on a document load, so nothing is lost.
+ * Raw markup, deliberately **not** `next/script` with `strategy="beforeInteractive"`. That strategy
+ * neither hoists an inline script into `<head>` nor executes it during parsing: Next emits it as a
+ * `(self.__next_s=self.__next_s||[]).push(…)` registration at the top of `<body>`, and the code only
+ * runs once Next's own runtime chunks drain that queue — chunks loaded with `async`, so none of them
+ * block the parser. That makes flash-freedom a race against the network rather than a guarantee, and
+ * the first deploy of this file lost it: the served HTML contained no synchronous theme code at all,
+ * only the queued string. Markup in the document stream has no such dependency.
+ *
+ * It is injected through `dangerouslySetInnerHTML` on a wrapper rather than written as a `<script>`
+ * element, because React does not hydrate script elements: rendering one from a component makes the
+ * client take its create path, which appends a second, permanently inert copy next to the one the
+ * parser already ran (two `<script>` nodes in `<body>`, measured) and logs
+ * `Encountered a script tag while rendering React component` — dev-only, but the duplicate is not.
+ * Inside `dangerouslySetInnerHTML` the tag is opaque to React, so nothing is diffed or re-created,
+ * while the server still streams a real `<script>` that the HTML parser executes where it sits.
+ *
+ * It does not re-run on a client navigation, which is correct — `data-theme` survives a soft
+ * navigation and the toggle owns every change after boot.
  *
  * No stored choice falls through to the OS preference, so the default is the visitor's, not ours.
  * Wrapped in try/catch because `localStorage` throws outright in a partitioned or cookie-blocked
@@ -108,12 +119,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <body className="min-h-dvh antialiased">
-        {/* `id` is required for Next to track an inline script. */}
-        <Script
-          id="relayn-theme"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}
-        />
+        {/*
+          First child of `<body>`: the parser reaches and runs this before any painted markup.
+          `hidden` because the wrapper exists only to carry the tag — it must never be a layout box.
+        */}
+        <div hidden dangerouslySetInnerHTML={{ __html: `<script>${THEME_SCRIPT}</script>` }} />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
