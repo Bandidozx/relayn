@@ -3,16 +3,17 @@
  * available to their account" — both the catalogue filter and the gateway's step-6 check
  * call it, so the full ordering matrix is asserted here rather than spot-checked.
  *
- * The `unlimited` plan is also asserted structurally: it must stay out of the two lists the
- * request schemas are built from, because those exclusions are what make "upgrade myself for
- * free" fail at validation rather than in service code.
+ * The `unlimited` plan is also asserted structurally: it must stay out of the admin-assignable
+ * list the operator schema is built from, and `PUBLIC_PLAN_ORDER` must stay down to the two plans
+ * a user can actually reach, because those two facts are what make "grant myself a better tier for
+ * free" have no request shape at all.
  */
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_ASSIGNABLE_PLAN_ORDER,
   PLANS,
   PLAN_ORDER,
-  SELF_SERVE_PLAN_ORDER,
+  PUBLIC_PLAN_ORDER,
   UNLIMITED_PLAN_ID,
   UNLIMITED_PRICE_IDR,
   UNLIMITED_TOKEN_ALLOCATION,
@@ -48,9 +49,11 @@ describe("plan catalogue", () => {
     }
   });
 
-  it("keeps Enterprise off the self-serve path", () => {
-    expect(PLANS.enterprise.selfServe).toBe(false);
-    expect(PLANS.free.selfServe).toBe(true);
+  it("advertises only the two plans a user can actually reach", () => {
+    // Free on registration, unlimited after one verified payment. Pro/Business/Enterprise have no
+    // processor and no assignment endpoint, so listing them would advertise an unbuyable product.
+    expect(PUBLIC_PLAN_ORDER).toEqual(["free", UNLIMITED_PLAN_ID]);
+    expect(PUBLIC_PLAN_ORDER.every((id) => PLAN_ORDER.includes(id))).toBe(true);
   });
 
   it("marks exactly one plan as unmetered, and it is the one-time purchase", () => {
@@ -84,11 +87,12 @@ describe("plan catalogue", () => {
 });
 
 describe("write-path exclusions", () => {
-  it("excludes unlimited from the self-serve list the PATCH schema is built from", () => {
-    expect(SELF_SERVE_PLAN_ORDER).not.toContain(UNLIMITED_PLAN_ID);
-    expect(SELF_SERVE_PLAN_ORDER).toEqual(["free", "pro", "business"]);
-    // Every self-serve id must actually be flagged self-serve.
-    for (const id of SELF_SERVE_PLAN_ORDER) expect(PLANS[id].selfServe).toBe(true);
+  it("exposes no self-serve plan list for a request schema to be built from", async () => {
+    // `SELF_SERVE_PLAN_ORDER` used to feed `changePlanSchema`, which fed PATCH /api/subscription.
+    // All three are gone: the only plan a user can obtain is bought, not requested. A reintroduced
+    // export would be the first step back towards a free-upgrade endpoint, so its absence is pinned.
+    const plans: Record<string, unknown> = await import("@/lib/plans");
+    expect("SELF_SERVE_PLAN_ORDER" in plans).toBe(false);
   });
 
   it("excludes unlimited from the admin-assignable list", () => {
@@ -96,8 +100,13 @@ describe("write-path exclusions", () => {
     expect(ADMIN_ASSIGNABLE_PLAN_ORDER).toEqual(["free", "pro", "business", "enterprise"]);
   });
 
-  it("never marks the unlimited plan self-serve", () => {
-    expect(PLANS.unlimited.selfServe).toBe(false);
+  it("puts unlimited above every plan an operator may assign", () => {
+    // The consequence that matters: an operator cannot hand out an account that outranks a paid
+    // one, so `planSatisfies` can never be satisfied for free.
+    for (const id of ADMIN_ASSIGNABLE_PLAN_ORDER) {
+      expect(planSatisfies(id, UNLIMITED_PLAN_ID)).toBe(false);
+      expect(planSatisfies(UNLIMITED_PLAN_ID, id)).toBe(true);
+    }
   });
 });
 

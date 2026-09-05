@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { StatCard, StatGrid } from "@/components/dashboard/stat-card";
-import { PlanPicker } from "@/components/subscription/plan-picker";
 import { CryptoPaymentCard } from "@/components/subscription/crypto-payment";
 import { UnlimitedOfferCard } from "@/components/subscription/unlimited-offer";
 import { StatusBadge } from "@/components/ui/badge";
@@ -21,11 +20,14 @@ import { getSubscription } from "@/server/services/subscription-service";
 export const metadata: Metadata = { title: "Subscription" };
 
 /**
- * Two entirely different accounts render from this one page:
+ * One purchase, two account shapes.
  *
- *  - a metered account (`free`/`pro`/`business`), which has an allocation, a percentage and a
- *    monthly token window, and may switch between self-serve plans;
- *  - a paid unlimited account, which has none of those. Every cycle-shaped figure is replaced
+ * There is no plan ladder to browse and nothing to switch between: an account is either metered
+ * (the `free` default, or a tier an operator assigned by hand) or permanently unlimited because it
+ * paid once. So this page sells exactly one thing and otherwise reports state.
+ *
+ *  - a metered account has an allocation, a percentage and a monthly token window;
+ *  - a paid unlimited account has none of those. Every cycle-shaped figure is replaced
  *    rather than filled with a sentinel, because a "2.0B allocation, resets 25 Sep" row would be
  *    a lie about a permanent purchase.
  *
@@ -56,7 +58,7 @@ export default async function SubscriptionPage() {
 
   const details: Array<[string, string]> = unlimited
     ? [
-        ["Plan", subscription.planName],
+        ["Account", subscription.planName],
         ["Status", subscription.status],
         ["Token ceiling", "None"],
         ["Used all-time", `${formatNumber(subscription.used)} tokens`],
@@ -66,7 +68,7 @@ export default async function SubscriptionPage() {
         ["Active keys", formatNumber(payload.activeKeys)],
       ]
     : [
-        ["Plan", subscription.planName],
+        ["Account", subscription.planName],
         ["Status", subscription.status],
         ["Allocation", `${formatNumber(subscription.allocation)} tokens`],
         ["Used this cycle", `${formatNumber(subscription.used)} tokens`],
@@ -85,14 +87,18 @@ export default async function SubscriptionPage() {
         description={
           unlimited
             ? "Your access, what it cost and what it covers. There is no cycle to manage — the payment was made once."
-            : "Your allocation, rate limits and plan. Changes apply to the current cycle immediately."
+            : `Your allocation and rate limits. One ${priceLabel} payment removes both, permanently.`
         }
         action={<StatusBadge status={subscription.status} />}
       />
 
       <StatGrid>
+        {/*
+         * Labelled "Account", not "Current plan": there is nothing to compare it against. The value
+         * is still the row's real plan name, so an operator-assigned tier reports itself honestly.
+         */}
         <StatCard
-          label="Current plan"
+          label="Account"
           value={subscription.planName}
           tone="brand"
           hint={
@@ -149,32 +155,6 @@ export default async function SubscriptionPage() {
       ) : (
         <UnlimitedOfferCard offer={unlimitedOffer} subscription={subscription} />
       )}
-      {unlimited ? (
-        // The picker is hidden rather than disabled: `changePlan` refuses to touch an unlimited
-        // account at all, so showing switchable cards would offer an action the API rejects.
-        <Card>
-          <CardHeader
-            title="Metered plans"
-            description="Not applicable while permanent unlimited access is active."
-          />
-          <CardBody className="text-xs leading-relaxed text-ink-muted">
-            <p>
-              Free, Pro and Business are monthly allocation tiers. Your account is above all of
-              them and has no allocation to meter, so there is nothing to switch to. Downgrading
-              is not automatic either — the access you paid for is never revoked by this page.
-            </p>
-            <p className="mt-2 text-[11px] text-ink-faint">
-              Need it changed anyway?{" "}
-              <Link href="/support" className="text-brand hover:opacity-80">
-                Open a ticket
-              </Link>
-              .
-            </p>
-          </CardBody>
-        </Card>
-      ) : (
-        <PlanPicker initial={payload} />
-      )}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
@@ -184,19 +164,22 @@ export default async function SubscriptionPage() {
           />
           <CardBody className="space-y-2 text-xs leading-relaxed text-ink-muted">
             <p>
-              There are two different things on this page.{" "}
-              <span className="text-ink">Unlimited</span> is a real one-time purchase:{" "}
-              {priceLabel} paid once
+              There is exactly one thing to buy here.{" "}
+              <span className="text-ink">Unlimited</span> costs {priceLabel}, is paid once, and
+              never renews
               {onChain
-                ? ", verified by reading the transfer directly from the blockchain on our server"
-                : " through QRIS, activated only after the payment provider's signed callback is verified on our server"}
-              . No button here can grant it, and the API refuses to assign it by hand.
+                ? " — it is verified by reading the transfer directly from the blockchain on our server"
+                : " — it is activated only after the payment provider's signed callback is verified on our server"}
+              . No button on this page can grant it, and the API refuses to assign it by hand.
             </p>
             <p>
-              The metered plans (Free, Pro, Business) have{" "}
-              <span className="text-ink">no</span> recurring processor connected. Switching between
-              them updates your allocation and rate limit directly and is written to the audit log —
-              nothing is charged. <span className="numeric text-ink">billingConnected</span> reports{" "}
+              There are no monthly tiers to choose between and{" "}
+              <span className="text-ink">no</span> recurring processor is connected, so nothing is
+              ever charged to a card.{" "}
+              {unlimited
+                ? "Your access was paid for and is never revoked by this page."
+                : `Until the ${priceLabel} payment lands, this account runs on its current allocation and rate limit.`}{" "}
+              <span className="numeric text-ink">billingConnected</span> reports{" "}
               <span className="numeric text-ink">{String(subscription.billingConnected)}</span>.
             </p>
             <p>
@@ -245,7 +228,7 @@ export default async function SubscriptionPage() {
               <Link href="/support" className="text-brand hover:opacity-80">
                 Open a ticket
               </Link>{" "}
-              and we will size an Enterprise plan with you.
+              and we will arrange it with you directly.
             </p>
           </CardBody>
         </Card>

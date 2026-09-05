@@ -21,7 +21,7 @@ export default async function ApiKeysPage() {
     <>
       <PageHeader
         title="API keys"
-        description="One key authenticates every model your plan allows. Keys are stored as SHA-256 hashes — we can show you a new key once, never an old one."
+        description="One key authenticates every model your account can call. Keys are stored as SHA-256 hashes — we can show you a new key once, never an old one."
       />
 
       <KeysManager initialKeys={keys} planName={plan.name} maxKeys={plan.maxApiKeys} />

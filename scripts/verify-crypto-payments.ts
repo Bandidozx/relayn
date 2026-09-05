@@ -18,6 +18,7 @@
  * are named `cryptoverify-<random>@relayn.test` so a crashed run is identifiable and deletable.
  */
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/db";
 import {
   UNLIMITED_PLAN_ID,
@@ -38,7 +39,6 @@ import {
   submitTransactionHash,
   toCryptoView,
 } from "../src/server/services/crypto-payment-service";
-import { changePlan } from "../src/server/services/subscription-service";
 import { ensureSubscription, quotaFrom, recordUsage } from "../src/lib/usage/accounting";
 import { describeQuota } from "../src/lib/usage/quota-display";
 
@@ -409,19 +409,25 @@ async function main() {
   check("planExpiresAt is still null", sub.planExpiresAt === null);
   check("the lifetime token total is not zeroed", sub.tokensUsed === 7_500_000);
 
-  const patch = new Request("http://localhost:3200/api/subscription", { method: "PATCH" });
-  await expectRejection(
-    "PATCH /api/subscription cannot grant unlimited",
-    () => changePlan(alice.id, UNLIMITED_PLAN_ID, patch, alice.email),
-    /one-time purchase/i,
+  const subscriptionRoute = readFileSync(
+    new URL("../src/app/api/subscription/route.ts", import.meta.url),
+    "utf8",
   );
-  await expectRejection(
-    "and cannot move a paid account off unlimited either",
-    () => changePlan(alice.id, "free", patch, alice.email),
-    /permanent unlimited access/i,
+  check(
+    "/api/subscription has no PATCH — nothing can name a plan in a request body",
+    /export const GET\b/.test(subscriptionRoute) &&
+      !["POST", "PATCH", "PUT", "DELETE"].some((verb) =>
+        subscriptionRoute.includes(`export const ${verb}`),
+      ),
+  );
+  check(
+    "and the service behind it exports no plan mutator",
+    !/export (async )?function changePlan\b/.test(
+      readFileSync(new URL("../src/server/services/subscription-service.ts", import.meta.url), "utf8"),
+    ),
   );
   sub = await ensureSubscription(alice.id);
-  check("the account is still unlimited after both refusals", sub.unlimited === true);
+  check("the account is still unlimited after both checks", sub.unlimited === true);
 
   // ── 17. Usage accounting still works, and never exhausts ────────────────────────────────
   console.log("\nUsage accounting on an unlimited account");

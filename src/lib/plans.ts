@@ -2,22 +2,26 @@
  * Plan catalogue. Shared by the dashboard, the subscription API and the gateway's
  * authorisation checks, so there is exactly one definition of what a plan grants.
  *
- * Two pricing shapes coexist here:
- *   - `free`/`pro`/`business`/`enterprise` are the original monthly, allocation-metered
- *     tiers. `priceMonthlyUsd` is display-only for these; no recurring processor is wired
- *     up and none is planned.
- *   - `unlimited` is a **one-time** purchase (`oneTime: true`) that grants uncapped tokens
- *     permanently. It is deliberately the highest `order`, so `planSatisfies` lets it reach
- *     every `minPlan` in the model catalogue without any existing row being re-gated or
- *     remapped. Two prices are carried because two rails exist: `priceUsdMicro` for the
- *     active on-chain rail and `priceIdr` for the paused QRIS rail.
+ * **Only two of these are obtainable** (`PUBLIC_PLAN_ORDER`): `free`, which every account starts
+ * on, and `unlimited`, which one payment grants permanently. There is no plan-switching UI and no
+ * plan-switching endpoint — see `src/app/api/subscription/route.ts`, which exposes `GET` only.
  *
- * `unlimited` is NOT self-serve and is NOT admin-assignable: the only code paths that may set
- * it are a signature-verified payment callback (`src/server/services/payment-service.ts`) and a
- * chain-verified transfer (`src/server/services/crypto-payment-service.ts`). That is why it is
- * excluded from `SELF_SERVE_PLAN_ORDER` and `ADMIN_ASSIGNABLE_PLAN_ORDER` — the request schemas
- * are built from those lists, so "upgrade myself for free" is rejected at the validation layer
- * before any service code runs.
+ * `pro`, `business` and `enterprise` are retained as **account states an operator may assign**, not
+ * as products. Existing subscription rows still name them, `planSatisfies` still gates models by
+ * them, and `ADMIN_ASSIGNABLE_PLAN_ORDER` still lists them; their `priceMonthlyUsd` is legacy
+ * display data and no recurring processor is, or ever was, wired up. Nothing advertises them for
+ * sale, because nothing can sell them.
+ *
+ * `unlimited` is the highest `order` on purpose, so `planSatisfies` lets it reach every `minPlan`
+ * in the model catalogue without any existing row being re-gated or remapped. Two prices are
+ * carried because two rails exist: `priceUsdMicro` for the active on-chain rail and `priceIdr` for
+ * the paused QRIS rail.
+ *
+ * `unlimited` is NOT admin-assignable either: the only code paths that may set it are a
+ * signature-verified payment callback (`src/server/services/payment-service.ts`) and a
+ * chain-verified transfer (`src/server/services/crypto-payment-service.ts`). It is excluded from
+ * `ADMIN_ASSIGNABLE_PLAN_ORDER`, whose schema rejects it at the validation layer, so "grant myself
+ * permanent access for free" has no request shape at all.
  */
 export type PlanId = "free" | "pro" | "business" | "enterprise" | "unlimited";
 
@@ -47,8 +51,6 @@ export interface Plan {
   order: number;
   /** Highest model tier this plan may call. */
   features: string[];
-  /** Self-serve plan changes are allowed; enterprise requires a conversation. */
-  selfServe: boolean;
 }
 
 /** The plan a verified one-time payment grants. */
@@ -98,7 +100,6 @@ export const PLANS: Record<PlanId, Plan> = {
     requestsPerMinute: 20,
     maxApiKeys: 1,
     order: 0,
-    selfServe: true,
     features: [
       "250K tokens / month",
       "Open-weight + budget models",
@@ -116,7 +117,6 @@ export const PLANS: Record<PlanId, Plan> = {
     requestsPerMinute: 60,
     maxApiKeys: 10,
     order: 1,
-    selfServe: true,
     features: [
       "5M tokens / month",
       "Frontier chat + reasoning models",
@@ -135,7 +135,6 @@ export const PLANS: Record<PlanId, Plan> = {
     requestsPerMinute: 300,
     maxApiKeys: null,
     order: 2,
-    selfServe: true,
     features: [
       "25M tokens / month",
       "Full catalogue incl. vision + embeddings",
@@ -155,7 +154,6 @@ export const PLANS: Record<PlanId, Plan> = {
     requestsPerMinute: 1_200,
     maxApiKeys: null,
     order: 3,
-    selfServe: false,
     features: [
       "250M tokens / month",
       "Private model routing pools",
@@ -178,8 +176,7 @@ export const PLANS: Record<PlanId, Plan> = {
     requestsPerMinute: 1_200,
     maxApiKeys: null,
     order: 4,
-    // Never reachable from PATCH /api/subscription — only from a verified payment.
-    selfServe: false,
+    // Never reachable from a request of any kind — only from a verified payment.
     features: [
       "Permanent access — no renewal, no expiry",
       "All available models, including paid tiers",
@@ -194,12 +191,15 @@ export const PLANS: Record<PlanId, Plan> = {
 export const PLAN_ORDER: PlanId[] = ["free", "pro", "business", "enterprise", "unlimited"];
 
 /**
- * Plans a signed-in user may move between with no payment at all.
+ * The only plans a user can actually end up on by their own action, in the order they are
+ * advertised: `free` on registration, `unlimited` after one verified payment.
  *
- * `changePlanSchema` is built from this list, so `PATCH /api/subscription { plan: "unlimited" }`
- * fails Zod validation before `changePlan` is even called.
+ * This is what the public pricing grid iterates. `pro`/`business`/`enterprise` are deliberately
+ * absent — there is no processor behind them and no endpoint that assigns them, so listing them
+ * would advertise something nobody can buy. They remain in `PLAN_ORDER` because live subscription
+ * rows still carry those ids and `planSatisfies` still gates models by them.
  */
-export const SELF_SERVE_PLAN_ORDER: PlanId[] = ["free", "pro", "business"];
+export const PUBLIC_PLAN_ORDER: PlanId[] = ["free", UNLIMITED_PLAN_ID];
 
 /**
  * Plans an administrator may assign by hand. Deliberately excludes `unlimited`: granting

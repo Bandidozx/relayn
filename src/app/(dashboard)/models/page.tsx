@@ -34,7 +34,7 @@ export default async function ModelsPage() {
     <>
       <PageHeader
         title="Models"
-        description="One API key reaches every model your plan allows. Pass the model id shown on each card as the model field of your request."
+        description="One API key reaches every model your account can call. Pass the model id shown on each card as the model field of your request."
         action={
           <Link
             href="/integrations"
@@ -47,16 +47,26 @@ export default async function ModelsPage() {
 
       <StatGrid>
         <StatCard
-          label="On your plan"
+          label="Available to you"
           value={formatNumber(catalogue.availableCount)}
           tone="brand"
-          hint={`${catalogue.planName} plan`}
+          hint={`${catalogue.planName} account`}
         />
         <StatCard
           label="Locked"
           value={formatNumber(locked)}
           tone={locked > 0 ? "amber" : "default"}
-          hint={locked > 0 ? "Upgrade to unlock" : "Full catalogue unlocked"}
+          hint={
+            locked > 0 ? (
+              // Named for the only thing that actually unlocks them. "Upgrade" implied a tier
+              // ladder to climb, and there is none — one purchase opens the whole catalogue.
+              <Link href="/subscription" className="text-brand transition-colors hover:underline">
+                Unlock every model with Unlimited
+              </Link>
+            ) : (
+              "Full catalogue unlocked"
+            )
+          }
         />
         <StatCard label="Categories" value={formatNumber(catalogue.categories.length)} />
         <StatCard label="Providers" value={formatNumber(catalogue.providers.length)} />

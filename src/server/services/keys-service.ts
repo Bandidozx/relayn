@@ -72,7 +72,7 @@ export async function createApiKey(
     const active = await prisma.apiKey.count({ where: { userId, status: "active" } });
     if (active >= limit) {
       throw conflict(
-        `The ${planOf(subscription.plan).name} plan allows ${limit} active ${limit === 1 ? "key" : "keys"}. Revoke one or upgrade your plan.`,
+        `The ${planOf(subscription.plan).name} plan allows ${limit} active ${limit === 1 ? "key" : "keys"}. Revoke one, or unlock uncapped keys with the one-time Unlimited purchase.`,
       );
     }
   }

@@ -205,7 +205,7 @@ Branch on `code` (stable), not on `message` (human-readable, may be reworded).
 | 402 | `subscription_inactive` | The account's subscription is not active. |
 | 402 | `insufficient_tokens` | Monthly allocation exhausted; the message states the reset date. |
 | 403 | `account_suspended` | Operator action. Contact them. |
-| 403 | `model_not_available_on_plan` | The model needs a higher plan than this key has. |
+| 403 | `model_not_available_on_plan` | The model is gated above this account. Nothing to retry — use a model `GET /v1/models` returned. |
 | 404 | `model_not_found` | Not in the catalogue. Re-read `GET /v1/models`. |
 | 429 | `rate_limit_exceeded` | Honour `retry-after` (seconds), then retry. |
 | 499 | `client_closed_request` | You aborted. Nothing was billed. |
@@ -218,9 +218,10 @@ Branch on `code` (stable), not on `message` (human-readable, may be reworded).
 an immediate retry of the same id is usually pointless — try a different model.
 
 429s carry `retry-after`, `x-ratelimit-limit`, `x-ratelimit-remaining: 0` and
-`x-ratelimit-reset` (epoch ms). The limit is a fixed window per key *and* per account, sized by
-plan: Free 20/min, Pro 60, Business 300, Enterprise and Unlimited 1200. Token allocation is
-separate and monthly — 250K on Free up to uncapped on Unlimited.
+`x-ratelimit-reset` (epoch ms). The limit is a fixed window per key *and* per account, sized by the
+account: 20/min on the free default, 1200/min once Unlimited is bought (a few accounts sit on
+operator-assigned tiers in between). Token allocation is separate and monthly — 250K by default,
+uncapped on Unlimited.
 
 ## Rules
 

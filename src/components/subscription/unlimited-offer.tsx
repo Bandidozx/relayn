@@ -3,9 +3,9 @@
 /**
  * The one-time Unlimited purchase.
  *
- * Deliberately not part of `PlanPicker`: this is a purchase, not a plan switch, and the two
- * must not look interchangeable in the UI any more than they are in the API. `PATCH
- * /api/subscription` cannot produce unlimited at all — only a verified QRIS payment can.
+ * The one and only thing this deployment sells. There is no plan ladder beside it and no
+ * plan-change endpoint: `/api/subscription` is read-only, so unlimited can be produced by nothing
+ * except a verified QRIS payment.
  *
  * The checkout call sends **no body**. Amount, plan and user are all decided server-side, so
  * there is nothing here for a tampered request to change. Progress is observed by re-reading

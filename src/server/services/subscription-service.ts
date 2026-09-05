@@ -1,16 +1,15 @@
 /**
- * Subscription + plan changes.
+ * Subscription state and the one-time purchase offers.
  *
- * Two kinds of plan exist here and they are reached in completely different ways:
+ * There is exactly **one** way an account's plan changes by the account holder's own action: a
+ * verified payment for `unlimited`. This module is read-only with respect to `Subscription.plan` —
+ * it deliberately exports no mutator. The write paths are `applyVerifiedPayment` (behind a
+ * signature-verified provider callback), `submitTransactionHash` (behind a chain-verified
+ * transfer), and the operator tool in `admin-service.ts` (which cannot assign `unlimited`).
  *
- *  - `free`/`pro`/`business` are self-serve and switch immediately (no recurring processor is
- *    integrated; `Subscription.externalRef` is the seam for one). `enterprise` is arranged by
- *    hand.
- *  - `unlimited` is a one-time purchase and is **not reachable from this module at all**. It is
- *    absent from `SELF_SERVE_PLAN_ORDER`, so `changePlanSchema` rejects it before any service
- *    code runs, and `changePlan` refuses it again below. The only write paths are
- *    `applyVerifiedPayment` (behind a signature-verified provider callback) and
- *    `submitTransactionHash` (behind a chain-verified transfer).
+ * The metered tiers (`pro`/`business`/`enterprise`) are not sold: no recurring processor is
+ * integrated, `Subscription.externalRef` is the seam for one, and `billingConnected` stays false
+ * until it exists. An account sits on `free` until it pays, and on `unlimited` afterwards.
  *
  * Two purchase rails are surfaced, and the page picks one: `cryptoOffer` when the deployment has
  * `CRYPTO_PAYMENT_*` set, `unlimitedOffer` (QRIS) otherwise. Both are computed because whether a
@@ -19,16 +18,10 @@
  */
 import "server-only";
 import { prisma } from "@/lib/db";
-import { recordAudit } from "@/lib/audit";
-import { badRequest, conflict } from "@/lib/api/http";
 import {
   PLANS,
-  PLAN_ORDER,
   UNLIMITED_PLAN_ID,
   UNLIMITED_PRICE_IDR,
-  UNLIMITED_PRICE_USD_LABEL,
-  isPlanId,
-  isUnlimitedPlan,
   planOf,
   type Plan,
 } from "@/lib/plans";
@@ -74,12 +67,6 @@ export interface UnlimitedOffer {
 
 export interface SubscriptionPayload {
   subscription: SubscriptionView;
-  /**
-   * Cards for `PlanPicker`: every metered plan, including `enterprise` (which renders as
-   * "Contact sales"). Excludes `unlimited`, which is bought once and has its own component —
-   * putting it in this grid would make a purchase look like a plan switch.
-   */
-  plans: Plan[];
   /** The one-time purchase over QRIS, presented separately because it is not a plan switch. */
   unlimitedOffer: UnlimitedOffer;
   /** The same purchase over the on-chain rail. */
@@ -134,7 +121,6 @@ export async function getSubscription(userId: string): Promise<SubscriptionPaylo
       permanent: quota.unlimited && subscription.planExpiresAt === null,
       planExpiresAt: subscription.planExpiresAt?.toISOString() ?? null,
     },
-    plans: PLAN_ORDER.filter((id) => !PLANS[id].oneTime).map((id) => PLANS[id]),
     unlimitedOffer: {
       plan: PLANS[UNLIMITED_PLAN_ID],
       priceIdr: UNLIMITED_PRICE_IDR,
@@ -148,57 +134,14 @@ export async function getSubscription(userId: string): Promise<SubscriptionPaylo
   };
 }
 
-export async function changePlan(
-  userId: string,
-  nextPlan: string,
-  request: Request,
-  actorEmail: string,
-): Promise<SubscriptionPayload> {
-  if (!isPlanId(nextPlan)) throw badRequest("Unknown plan.");
-  const target = PLANS[nextPlan];
-
-  // Second layer behind `changePlanSchema`. Kept even though the schema already rejects it:
-  // the schema is one edit away from being widened, this is the invariant.
-  if (isUnlimitedPlan(nextPlan)) {
-    throw badRequest(
-      `${target.name} is a one-time purchase, not a plan switch. Complete the ${UNLIMITED_PRICE_USD_LABEL} payment to activate it.`,
-    );
-  }
-  if (!target.selfServe) {
-    throw badRequest("Enterprise plans are arranged with our team — open a support ticket.");
-  }
-
-  const current = await ensureSubscription(userId);
-
-  // A paid account keeps what it paid for. Nothing self-serve may take it away — the user's
-  // rule is that unlimited never silently reverts to Free.
-  if (current.unlimited) {
-    throw conflict(
-      "This account has permanent unlimited access. Contact support if you need it changed.",
-    );
-  }
-
-  if (current.plan === nextPlan) throw badRequest(`You are already on ${target.name}.`);
-
-  await prisma.subscription.update({
-    where: { userId },
-    data: {
-      plan: target.id,
-      tokenAllocation: target.tokenAllocation,
-      status: "active",
-      // Usage carries over: switching plans mid-cycle must not wipe recorded consumption.
-    },
-  });
-
-  await recordAudit({
-    action: "subscription.plan_changed",
-    userId,
-    actorEmail,
-    targetType: "subscription",
-    targetId: current.id,
-    metadata: { from: current.plan, to: target.id },
-    request,
-  });
-
-  return getSubscription(userId);
-}
+/*
+ * No `changePlan` export, by design.
+ *
+ * It used to back `PATCH /api/subscription` for the Free/Pro/Business picker. The picker is gone —
+ * `unlimited` at $0.10 is the only thing on offer — and a mutator with no UI behind it is just a
+ * free-upgrade endpoint waiting to be called directly with curl. Removing the function removes the
+ * capability rather than guarding it, which is the stronger of the two.
+ *
+ * If a plan ladder is ever reintroduced it needs a processor first, and the write must go through
+ * the same verified-payment path `applyVerifiedPayment` and `submitTransactionHash` already use.
+ */

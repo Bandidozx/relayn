@@ -79,7 +79,7 @@ export class MockProvider implements ModelProvider {
         ? `You asked: "${excerpt}"`
         : "No user message was supplied, so there is nothing to respond to.",
       "",
-      `Routed as \`${upstreamModel}\` through the sandbox adapter. Everything downstream of this point is real: the request was authenticated with your API key, checked against your plan's token allocation, timed, billed and written to your usage log.`,
+      `Routed as \`${upstreamModel}\` through the sandbox adapter. Everything downstream of this point is real: the request was authenticated with your API key, checked against your account's token allocation, timed, billed and written to your usage log.`,
       "",
       "Point ENABLE_MOCK_PROVIDER at a real credential (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY or OPENROUTER_API_KEY) and enable a model from that provider to receive genuine completions.",
     ];

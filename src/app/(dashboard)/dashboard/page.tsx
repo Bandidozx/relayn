@@ -165,13 +165,15 @@ export default async function DashboardPage() {
           <Card>
             <CardHeader
               title={quota.unlimited ? "Your access" : "Current allocation"}
-              description={`${plan.name} plan`}
+              description={`${plan.name} account`}
               action={
                 <Link
                   href="/subscription"
                   className="rounded-lg border border-line-strong px-2.5 py-1.5 text-[11px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
                 >
-                  {quota.unlimited ? "View access" : "Change plan"}
+                  {/* "Change plan" pointed at a picker that no longer exists — the one move a
+                      metered account has is the one-time purchase. */}
+                  {quota.unlimited ? "View access" : "Go unlimited"}
                 </Link>
               }
             />

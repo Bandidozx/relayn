@@ -143,7 +143,7 @@ const MARKED: VendorRule[] = [
 /*
  * Vendors with no mark available in either source. These get a monogram in a Relayn palette
  * colour rather than a guessed brand colour — and deliberately never amber, which this page
- * already spends on the "needs a higher plan" state.
+ * already spends on the locked-model state.
  */
 const UNMARKED: VendorRule[] = [
   { slug: "xai", label: "xAI Grok", color: "var(--color-ink-muted)", initials: "XA", match: ["grok", "x-ai"] },

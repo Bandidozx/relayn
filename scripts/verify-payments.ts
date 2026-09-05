@@ -13,15 +13,16 @@
  * are named `payverify-<random>@relayn.test` so a crashed run is identifiable and deletable.
  */
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/db";
 import {
+  ADMIN_ASSIGNABLE_PLAN_ORDER,
   UNLIMITED_PLAN_ID,
   UNLIMITED_PRICE_IDR,
   UNLIMITED_TOKEN_ALLOCATION,
   planSatisfies,
 } from "../src/lib/plans";
 import { applyVerifiedPayment, getPaymentForUser } from "../src/server/services/payment-service";
-import { changePlan } from "../src/server/services/subscription-service";
 import { ensureSubscription, quotaFrom } from "../src/lib/usage/accounting";
 import { describeQuota } from "../src/lib/usage/quota-display";
 import type { CallbackEvent } from "../src/lib/payments/types";
@@ -281,30 +282,39 @@ async function main() {
     paidTier.every((model) => planSatisfies(UNLIMITED_PLAN_ID, model.minPlan)),
   );
 
-  // ── 15. No self-serve path to or from unlimited ────────────────────────────────────────
-  console.log("\nSelf-serve refusals");
-  const request = new Request("http://localhost:3200/api/subscription", { method: "PATCH" });
-  await expectRejection(
-    "changePlan refuses to grant unlimited",
-    () => changePlan(alice.id, UNLIMITED_PLAN_ID, request, alice.email),
-    /one-time purchase/i,
+  // ── 15. No request-shaped path to or from unlimited ────────────────────────────────────
+  console.log("\nNo free upgrade surface");
+  const subscriptionRoute = readFileSync(
+    new URL("../src/app/api/subscription/route.ts", import.meta.url),
+    "utf8",
   );
-  await expectRejection(
-    "changePlan refuses to move a paid account off unlimited",
-    () => changePlan(alice.id, "free", request, alice.email),
-    /permanent unlimited access/i,
+  check(
+    "/api/subscription exposes GET only — no verb can write a plan",
+    /export const GET\b/.test(subscriptionRoute) &&
+      !["POST", "PATCH", "PUT", "DELETE"].some((verb) =>
+        subscriptionRoute.includes(`export const ${verb}`),
+      ),
+  );
+  const subscriptionService = readFileSync(
+    new URL("../src/server/services/subscription-service.ts", import.meta.url),
+    "utf8",
+  );
+  check(
+    "the subscription service exports no plan mutator",
+    !/export (async )?function changePlan\b/.test(subscriptionService),
+  );
+  check(
+    "no operator-assignable plan can reach what a payment grants",
+    ADMIN_ASSIGNABLE_PLAN_ORDER.every(
+      (id) => !planSatisfies(id, UNLIMITED_PLAN_ID) && id !== UNLIMITED_PLAN_ID,
+    ),
   );
   sub = await ensureSubscription(alice.id);
-  check("the account is still unlimited afterwards", sub.unlimited === true);
+  check("the paid account is still unlimited", sub.unlimited === true);
 
   const bob = await makeUser("bob");
-  await expectRejection(
-    "changePlan refuses unlimited for an unpaid account too",
-    () => changePlan(bob.id, UNLIMITED_PLAN_ID, request, bob.email),
-    /one-time purchase/i,
-  );
   const bobSub = await ensureSubscription(bob.id);
-  check("and that account stays Free", bobSub.plan === "free" && bobSub.unlimited === false);
+  check("a fresh account starts Free", bobSub.plan === "free" && bobSub.unlimited === false);
 
   // ── Cross-account isolation ───────────────────────────────────────────────────────────
   console.log("\nCross-account isolation");

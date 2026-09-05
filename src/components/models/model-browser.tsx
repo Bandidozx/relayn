@@ -3,9 +3,9 @@
 /**
  * Model catalogue browser.
  *
- * Locked models are shown greyed out rather than hidden: users can see what an upgrade buys
- * them. That is a presentation choice only — the gateway re-checks the plan on every request,
- * so a locked card is never a usable capability.
+ * Locked models are shown greyed out rather than hidden: users can see what the one-time
+ * Unlimited purchase opens up. That is a presentation choice only — the gateway re-checks
+ * authorisation on every request, so a locked card is never a usable capability.
  */
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -119,7 +119,7 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
                 : "border-line-strong text-ink-muted hover:bg-hover hover:text-ink",
             )}
           >
-            On my plan
+            Available to me
           </button>
         </div>
       </div>
@@ -128,7 +128,7 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
         <div className="panel">
           <EmptyState
             title="No models match"
-            description="Clear the search or switch category — your plan may also restrict part of the catalogue."
+            description="Clear the search or switch category — part of the catalogue may also be closed to this account."
           />
         </div>
       ) : (
@@ -238,11 +238,18 @@ export function ModelBrowser({ catalogue }: { catalogue: ModelCatalogue }) {
                       Available
                     </Badge>
                   ) : (
+                    /*
+                     * Names the purchase, not the tier the row is gated behind. `minPlan` may say
+                     * `pro` or `business`, but neither can be bought — the only thing that clears
+                     * any gate is the one-time Unlimited payment, and `planSatisfies` puts it
+                     * above every `minPlan` in the catalogue. A "Needs Pro" badge would have sent
+                     * users to /subscription looking for a plan that isn't on sale.
+                     */
                     <Link
                       href="/subscription"
                       className="shrink-0 rounded-lg border border-amber/35 bg-amber/10 px-2 py-1 text-[11px] text-amber transition-opacity hover:opacity-85"
                     >
-                      Needs {model.minPlanName}
+                      Unlock with Unlimited
                     </Link>
                   )}
                 </footer>

@@ -69,9 +69,9 @@ export async function ensureSubscription(userId: string): Promise<Subscription> 
  * reads both.
  *
  * Use this only where nothing writes to `subscriptions` in the same request. Mutation paths
- * (`changePlan`, the gateway's token debit, registration) must keep calling
- * `ensureSubscription` directly: they re-read the row after updating it and have to see the
- * new value, not the one memoised before the write.
+ * (a verified payment activation, the gateway's token debit, registration, operator plan
+ * assignment) must keep calling `ensureSubscription` directly: they re-read the row after updating
+ * it and have to see the new value, not the one memoised before the write.
  */
 export const getRequestSubscription = cache(ensureSubscription);
 

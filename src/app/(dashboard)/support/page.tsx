@@ -33,10 +33,10 @@ const FAQ: FaqEntry[] = [
     question: "Why did I get a 429?",
     answer: (
       <>
-        Either the per-minute request limit for your plan or the per-key burst limit was exceeded.
-        The response includes <span className="numeric text-ink">retry-after</span> and the limit
-        that tripped. Rate limits are per user, per key and per IP, so a shared IP behind NAT can
-        also hit the IP limit.
+        Either the per-minute request limit for your account or the per-key burst limit was
+        exceeded. The response includes <span className="numeric text-ink">retry-after</span> and
+        the limit that tripped. Rate limits are per user, per key and per IP, so a shared IP behind
+        NAT can also hit the IP limit.
       </>
     ),
   },
@@ -45,8 +45,9 @@ const FAQ: FaqEntry[] = [
     answer: (
       <>
         Requests fail with <span className="numeric text-ink">402 quota_exhausted</span> until the
-        cycle resets or you switch plans. The Budget runway card on the overview projects when that
-        will happen based on your last seven active days.
+        cycle resets, or immediately stop failing if you buy Unlimited — it removes the token ceiling
+        entirely. The Budget runway card on the overview projects when that will happen based on your
+        last seven active days.
       </>
     ),
   },
@@ -64,9 +65,10 @@ const FAQ: FaqEntry[] = [
     question: "Is billing connected?",
     answer: (
       <>
-        Not in this deployment. Plan changes take effect immediately and are written to the audit
-        log; no card is charged. The Subscription page explains exactly where a payment processor
-        would plug in.
+        There is no recurring billing and no card is ever stored or charged. The only payment is the
+        one-time Unlimited purchase on the Subscription page, and it is granted only after the
+        transfer is verified on our server — never because the browser said it happened. Nothing on
+        this deployment can bill you again afterwards.
       </>
     ),
   },
@@ -74,8 +76,9 @@ const FAQ: FaqEntry[] = [
     question: "A model returns 403 model_not_allowed. Why?",
     answer: (
       <>
-        The model exists but sits above your plan tier. The Models page marks those cards with the
-        plan they need. The gateway re-checks this on every request, independently of the UI.
+        The model is gated above what this account may call. Buying Unlimited clears every gate in
+        the catalogue; the Models page marks the locked cards. The gateway re-checks this on every
+        request, independently of the UI.
       </>
     ),
   },
@@ -115,7 +118,7 @@ export default async function SupportPage() {
               {
                 href: "/models",
                 title: "Model catalogue",
-                body: "Check context windows, pricing and which plan each model needs.",
+                body: "Check context windows, pricing and which models this account can call.",
               },
               {
                 href: "/integrations",

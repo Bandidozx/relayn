@@ -164,7 +164,7 @@ export function IntegrationsWorkbench({
           description="Pick a model, optionally paste a key, and every example below updates to match."
         />
         <CardBody className="grid gap-3 sm:grid-cols-2">
-          <Field label="Model" htmlFor="snippet-model" help="Only models your plan can call.">
+          <Field label="Model" htmlFor="snippet-model" help="Only models this account can call.">
             <Select
               id="snippet-model"
               value={model}

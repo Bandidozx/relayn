@@ -130,7 +130,11 @@ export function KeysManager({
               variant="primary"
               size="sm"
               disabled={atLimit}
-              title={atLimit ? "Revoke a key or upgrade your plan to create another." : undefined}
+              title={
+                atLimit
+                  ? "Revoke a key to create another, or buy Unlimited for uncapped keys."
+                  : undefined
+              }
               onClick={() => {
                 setFormError(null);
                 setName("");
@@ -145,7 +149,7 @@ export function KeysManager({
         {keys.length === 0 ? (
           <EmptyState
             title="No API keys yet"
-            description="A key authenticates your requests to the gateway. One key works across every model your plan allows."
+            description="A key authenticates your requests to the gateway. One key works across every model your account can call."
             action={
               <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
                 Create your first key

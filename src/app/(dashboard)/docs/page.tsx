@@ -6,7 +6,7 @@ import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui/card";
 import { TableWrap, Td, Th, Tr } from "@/components/ui/table";
 import { requireUser } from "@/lib/auth/guards";
 import { env } from "@/lib/env";
-import { PLANS, planOf } from "@/lib/plans";
+import { PLANS, PUBLIC_PLAN_ORDER, planOf, type PlanId } from "@/lib/plans";
 import { formatCompact, formatNumber } from "@/lib/format";
 import {
   PLACEHOLDER_KEY,
@@ -78,7 +78,7 @@ const ERRORS: ErrorRow[] = [
   { status: 402, type: "insufficient_quota", code: "subscription_inactive", meaning: "The subscription is not active — check the Subscription page." },
   { status: 402, type: "insufficient_quota", code: "insufficient_tokens", meaning: "The monthly allocation is spent. The message states the reset date." },
   { status: 403, type: "permission_error", code: "account_suspended", meaning: "An operator suspended the account." },
-  { status: 403, type: "permission_error", code: "model_not_available_on_plan", meaning: "The model sits above your plan tier." },
+  { status: 403, type: "permission_error", code: "model_not_available_on_plan", meaning: "The model is gated above this account. Unlimited clears every gate." },
   { status: 404, type: "not_found_error", code: "model_not_found", meaning: "No such model id. `GET /v1/models` lists yours." },
   { status: 429, type: "rate_limit_error", code: "rate_limit_exceeded", meaning: "Per-key request rate exceeded. Honour `retry-after`." },
   { status: 503, type: "service_unavailable", code: "model_disabled", meaning: "The operator disabled this model." },
@@ -123,6 +123,15 @@ export default async function DocsPage() {
   const quickstart: CodeTab[] = quickstartSnippets(context);
   const streaming: CodeTab[] = streamingSnippets(context);
 
+  /*
+   * Rows for the rate-limit table: the two plans a reader can actually end up on, plus their own
+   * row when an operator assigned something else by hand. Listing all five would document
+   * Pro/Business/Enterprise as if they were on sale, and nothing sells them.
+   */
+  const limitRows = [...new Set<PlanId>([...PUBLIC_PLAN_ORDER, plan.id])]
+    .map((id) => PLANS[id])
+    .sort((a, b) => a.order - b.order);
+
   return (
     <>
       <PageHeader
@@ -160,7 +169,7 @@ export default async function DocsPage() {
             title="Quickstart"
             description={
               sample
-                ? `Runnable as-is against ${sample.modelId} — a model your plan can call.`
+                ? `Runnable as-is against ${sample.modelId} — a model this account can call.`
                 : "Seed the catalogue with npm run db:seed to get a callable model id here."
             }
           >
@@ -324,7 +333,7 @@ data: [DONE]`}
               language="json"
               code={`{
   "error": {
-    "message": "\`${context.model}\` requires the Pro plan or higher. Your plan is Free.",
+    "message": "\`${context.model}\` is not available to this account. The one-time Unlimited purchase unlocks the full catalogue.",
     "type": "permission_error",
     "code": "model_not_available_on_plan"
   }
@@ -367,38 +376,36 @@ data: [DONE]`}
             <TableWrap>
               <thead>
                 <tr>
-                  <Th>Plan</Th>
+                  <Th>Account</Th>
                   <Th align="right">Requests / min</Th>
                   <Th align="right">Tokens / month</Th>
                   <Th align="right">Active keys</Th>
                 </tr>
               </thead>
               <tbody>
-                {Object.values(PLANS)
-                  .sort((a, b) => a.order - b.order)
-                  .map((entry) => (
-                    <Tr key={entry.id} className={entry.id === plan.id ? "bg-brand/6" : undefined}>
-                      <Td className="text-ink">
-                        {entry.name}
-                        {entry.id === plan.id ? (
-                          <Badge tone="brand" className="ml-2">
-                            yours
-                          </Badge>
-                        ) : null}
-                      </Td>
-                      <Td align="right" className="numeric">
-                        {formatNumber(entry.requestsPerMinute)}
-                      </Td>
-                      <Td align="right" className="numeric">
-                        {/* The unlimited plan's allocation column is a sentinel, not a budget —
-                            printing "2B" here would read as a real monthly ceiling. */}
-                        {entry.unlimited ? "no ceiling" : formatCompact(entry.tokenAllocation)}
-                      </Td>
-                      <Td align="right" className="numeric">
-                        {entry.maxApiKeys === null ? "unlimited" : formatNumber(entry.maxApiKeys)}
-                      </Td>
-                    </Tr>
-                  ))}
+                {limitRows.map((entry) => (
+                  <Tr key={entry.id} className={entry.id === plan.id ? "bg-brand/6" : undefined}>
+                    <Td className="text-ink">
+                      {entry.name}
+                      {entry.id === plan.id ? (
+                        <Badge tone="brand" className="ml-2">
+                          yours
+                        </Badge>
+                      ) : null}
+                    </Td>
+                    <Td align="right" className="numeric">
+                      {formatNumber(entry.requestsPerMinute)}
+                    </Td>
+                    <Td align="right" className="numeric">
+                      {/* The unlimited plan's allocation column is a sentinel, not a budget —
+                          printing "2B" here would read as a real monthly ceiling. */}
+                      {entry.unlimited ? "no ceiling" : formatCompact(entry.tokenAllocation)}
+                    </Td>
+                    <Td align="right" className="numeric">
+                      {entry.maxApiKeys === null ? "unlimited" : formatNumber(entry.maxApiKeys)}
+                    </Td>
+                  </Tr>
+                ))}
               </tbody>
             </TableWrap>
             <Prose>

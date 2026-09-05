@@ -3,6 +3,8 @@
  * touches the database, so what is asserted here is the boundary: what is normalised, what
  * is rejected, and which defaults a caller gets when they omit a field.
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   adminModelSyncSchema,
@@ -11,7 +13,6 @@ import {
   adminProviderUpdateSchema,
   adminSubscriptionSchema,
   changePasswordSchema,
-  changePlanSchema,
   createApiKeySchema,
   deleteAccountSchema,
   loginSchema,
@@ -21,35 +22,27 @@ import {
 } from "@/lib/api/schemas";
 import { anthropicMessagesSchema, chatCompletionSchema } from "@/lib/gateway/schemas";
 
-describe("changePlanSchema", () => {
-  it("accepts the three self-serve tiers", () => {
-    for (const plan of ["free", "pro", "business"]) {
-      expect(changePlanSchema.safeParse({ plan }).success, plan).toBe(true);
+describe("self-serve plan changes", () => {
+  it("have no schema, so no request body can name a plan", async () => {
+    // `changePlanSchema` backed PATCH /api/subscription for the Free/Pro/Business picker. The
+    // picker is gone and $0.10 unlimited is the only thing on offer, so the shape that let a
+    // caller name their own tier was deleted rather than narrowed.
+    const schemas: Record<string, unknown> = await import("@/lib/api/schemas");
+    expect("changePlanSchema" in schemas).toBe(false);
+  });
+
+  it("have no route handler either — /api/subscription is read-only", () => {
+    // Asserted against the source because that is where the capability lives: importing the route
+    // would drag in Prisma and auth for a question about which verbs exist. A reintroduced mutator
+    // fails here, which is the standing rule "no endpoint may upgrade an account without payment".
+    const route = readFileSync(
+      fileURLToPath(new URL("../src/app/api/subscription/route.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(route).toMatch(/export const GET\b/);
+    for (const verb of ["POST", "PATCH", "PUT", "DELETE"]) {
+      expect(route.includes(`export const ${verb}`), verb).toBe(false);
     }
-  });
-
-  it("rejects unlimited, so PATCH /api/subscription can never grant it", () => {
-    // The security property the whole payment design rests on: there is no free upgrade path.
-    // This fails at validation, before `changePlan` — which refuses again — is even called.
-    expect(changePlanSchema.safeParse({ plan: "unlimited" }).success).toBe(false);
-  });
-
-  it("rejects enterprise and anything invented by the caller", () => {
-    for (const plan of ["enterprise", "UNLIMITED", "unlimited ", "god-mode", "", null, 1]) {
-      expect(changePlanSchema.safeParse({ plan }).success, String(plan)).toBe(false);
-    }
-  });
-
-  it("ignores an amount or user id smuggled alongside the plan", () => {
-    // Zod strips unknown keys by default; asserting it here documents that a client cannot
-    // introduce a price or a target account through this body.
-    const parsed = changePlanSchema.parse({
-      plan: "pro",
-      amount: 1,
-      userId: "someone-else",
-      unlimited: true,
-    });
-    expect(parsed).toEqual({ plan: "pro" });
   });
 });
 

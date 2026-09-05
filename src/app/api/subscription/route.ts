@@ -1,23 +1,22 @@
 /**
- * GET   /api/subscription — current plan, allocation and the plan catalogue.
- * PATCH /api/subscription — self-serve plan change.
+ * GET /api/subscription — current plan, allocation, and the one-time purchase offer.
  *
- * No payment processing is wired up (per the brief). The plan switch is immediate and
- * audited; `Subscription.externalRef` is the seam for a real billing provider.
+ * **Read-only, deliberately.** There is no `PATCH`: the only plan a user can obtain is
+ * `unlimited`, and the only things that grant it are a signature-verified provider callback
+ * (`/api/payments/callback`) and a chain-verified transfer (`/api/payments/crypto/verify`).
+ * Both read the amount, recipient and payer from the provider or the blockchain — never from a
+ * request body.
+ *
+ * A self-serve plan switch used to live here to back the Free/Pro/Business picker. Both are gone.
+ * Leaving the mutator behind a removed UI would have meant any signed-in caller could `curl`
+ * themselves onto a 25M-token tier for free, which is the exact thing the payment design exists to
+ * prevent. Unlisted verbs return 405 from the framework, so this file needs no extra guard.
  */
-import { apiRoute, ok, parseJson } from "@/lib/api/http";
-import { changePlanSchema } from "@/lib/api/schemas";
+import { apiRoute, ok } from "@/lib/api/http";
 import { requireUser } from "@/lib/auth/guards";
-import { changePlan, getSubscription } from "@/server/services/subscription-service";
+import { getSubscription } from "@/server/services/subscription-service";
 
 export const GET = apiRoute(async () => {
   const { user } = await requireUser();
   return ok(await getSubscription(user.id));
-});
-
-export const PATCH = apiRoute(async (request) => {
-  const { user } = await requireUser();
-  const body = await parseJson(request, changePlanSchema);
-
-  return ok(await changePlan(user.id, body.plan, request, user.email));
 });

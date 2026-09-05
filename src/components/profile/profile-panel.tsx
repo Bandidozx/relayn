@@ -215,7 +215,7 @@ export function ProfilePanel({
     ["Account created", formatDateTime(profile.createdAt)],
     ["Last sign-in", profile.lastLoginAt ? formatDateTime(profile.lastLoginAt) : "—"],
     ["Email verified", profile.emailVerifiedAt ? formatDateTime(profile.emailVerifiedAt) : "Not verified"],
-    ["Plan", profile.planName],
+    ["Access", profile.planName],
     ["Active sessions", formatNumber(profile.activeSessions)],
     ["Active API keys", formatNumber(profile.activeKeys)],
     ["Requests logged", formatNumber(profile.totalRequests)],

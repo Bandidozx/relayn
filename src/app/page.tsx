@@ -15,7 +15,14 @@ import { getSession } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { env } from "@/lib/env";
 import { formatCompact, formatIdr, formatNumber, titleCase } from "@/lib/format";
-import { PLANS, PLAN_ORDER, UNLIMITED_PRICE_IDR } from "@/lib/plans";
+import { cryptoPaymentsConfigured } from "@/lib/payments/crypto/registry";
+import { paymentsConfigured } from "@/lib/payments/registry";
+import {
+  PLANS,
+  PUBLIC_PLAN_ORDER,
+  UNLIMITED_PRICE_IDR,
+  UNLIMITED_PRICE_USD_LABEL,
+} from "@/lib/plans";
 import { PLACEHOLDER_KEY, quickstartSnippets, type SnippetContext } from "@/lib/snippets";
 import { publicCatalogueSummary } from "@/server/services/models-service";
 
@@ -42,6 +49,14 @@ const STEPS: Array<[string, string]> = [
 export default async function LandingPage() {
   const [session, catalogue] = await Promise.all([getSession(), publicCatalogueSummary()]);
 
+  /*
+   * Which rail this deployment actually charges on, derived exactly as `getSubscription` derives
+   * `purchaseRail` — crypto wins when it is configured, and is also the fallback when neither rail
+   * is set up so the price quoted here can never contradict the checkout card on /subscription.
+   */
+  const onChain = cryptoPaymentsConfigured() || !paymentsConfigured();
+  const purchaseLabel = onChain ? UNLIMITED_PRICE_USD_LABEL : formatIdr(UNLIMITED_PRICE_IDR);
+
   const context: SnippetContext = {
     baseUrl: env.appUrl,
     apiKey: PLACEHOLDER_KEY,
@@ -61,7 +76,7 @@ export default async function LandingPage() {
             API
           </a>
           <a href="#plans" className="hidden px-2 text-ink-muted transition-colors hover:text-ink sm:inline">
-            Plans
+            Pricing
           </a>
           {session ? (
             <Link
@@ -188,15 +203,15 @@ export default async function LandingPage() {
           </p>
         </section>
         <section id="plans" className="scroll-mt-24">
-          <h2 className="text-xl font-semibold tracking-tight text-ink">Plans</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-ink">Pricing</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
-            Allocations and rate limits are enforced by the gateway, not just displayed here. The
-            monthly tiers are not billed — switching between them applies immediately and no card is
-            ever charged. <span className="text-ink">Unlimited</span> is the one thing that costs
-            money: a single {formatIdr(UNLIMITED_PRICE_IDR)} QRIS payment that never renews.
+            Two states, one price. Every new account starts on{" "}
+            <span className="text-ink">Free</span> with a monthly token allocation the gateway
+            actually enforces. <span className="text-ink">Unlimited</span> is the only thing that
+            costs money: {purchaseLabel}, paid once, no renewal and no token ceiling afterwards.
           </p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {PLAN_ORDER.map((id) => {
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:max-w-3xl">
+            {PUBLIC_PLAN_ORDER.map((id) => {
               const plan = PLANS[id];
               return (
                 <article
@@ -216,10 +231,10 @@ export default async function LandingPage() {
                       ) : null}
                     </div>
                     <p className="numeric mt-1 text-lg text-ink">
-                      {plan.priceLabel ?? (plan.priceMonthlyUsd === 0 ? "Free" : `$${plan.priceMonthlyUsd}`)}
-                      {plan.priceLabel || plan.priceMonthlyUsd === 0 ? null : (
-                        <span className="text-[11px] text-ink-faint"> /month</span>
-                      )}
+                      {plan.oneTime ? purchaseLabel : "Free"}
+                      {plan.oneTime ? (
+                        <span className="text-[11px] text-ink-faint"> once</span>
+                      ) : null}
                     </p>
                     <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
                       {plan.tagline}
@@ -242,15 +257,22 @@ export default async function LandingPage() {
                     className="mt-auto pt-3 text-[11px] text-brand transition-opacity hover:opacity-80"
                   >
                     {plan.oneTime
-                      ? `Buy for ${formatIdr(plan.priceIdr ?? UNLIMITED_PRICE_IDR)} →`
-                      : plan.selfServe
-                        ? "Choose this plan →"
-                        : "Talk to us →"}
+                      ? `Buy for ${purchaseLabel} →`
+                      : session
+                        ? "Open your dashboard →"
+                        : "Create a free account →"}
                   </Link>
                 </article>
               );
             })}
           </div>
+          <p className="mt-4 max-w-2xl text-[11px] leading-relaxed text-ink-faint">
+            {onChain
+              ? `Payment is an on-chain USDC transfer. The amount, recipient and sender are read back from the blockchain by our server before anything is activated — a transaction hash is the only thing the browser sends, and each one can activate exactly one account.`
+              : `Payment is verified server-side from the provider's signed callback before anything is activated. The browser never decides whether an account is paid.`}{" "}
+            Higher fixed allocations, private routing pools and SLAs are arranged directly — there is
+            no self-serve tier ladder and no card is ever stored.
+          </p>
         </section>
       </main>
 

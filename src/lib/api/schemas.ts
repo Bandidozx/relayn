@@ -11,7 +11,7 @@ import {
   MODEL_ID_PATTERN,
   splitFallbacks,
 } from "@/lib/catalogue";
-import { ADMIN_ASSIGNABLE_PLAN_ORDER, PLAN_ORDER, SELF_SERVE_PLAN_ORDER } from "@/lib/plans";
+import { ADMIN_ASSIGNABLE_PLAN_ORDER, PLAN_ORDER } from "@/lib/plans";
 
 const email = z
   .string()
@@ -98,15 +98,15 @@ export const usageQuerySchema = z.object({
   direction: z.enum(["asc", "desc"]).default("desc"),
 });
 
-/**
- * Self-serve plan changes only. `unlimited` is absent from `SELF_SERVE_PLAN_ORDER`, so
- * `PATCH /api/subscription { plan: "unlimited" }` fails validation with `validation_error`
- * before `changePlan` — or any database write — is reached. `changePlan` repeats the refusal;
- * this is the outer of the two layers.
+/*
+ * There is deliberately no plan-change schema here.
+ *
+ * `PATCH /api/subscription` was removed along with the plan picker: the only plan a user can
+ * obtain is `unlimited`, and it is granted by a verified payment, never by a request body. A
+ * schema for self-assigning a tier would be the first half of a free-upgrade endpoint, so the
+ * shape does not exist. Operator-side assignment lives in `adminSubscriptionSchema` below, which
+ * excludes `unlimited`.
  */
-export const changePlanSchema = z.object({
-  plan: z.enum(SELF_SERVE_PLAN_ORDER as unknown as [string, ...string[]]),
-});
 
 /**
  * The entire body of `POST /api/payments/crypto/verify`.

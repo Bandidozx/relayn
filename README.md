@@ -8,8 +8,8 @@ logged. The dashboard renders those rows — nothing on it is hardcoded.
 - **Gateway** — `POST /v1/chat/completions` (OpenAI dialect, streaming supported),
   `POST /v1/messages` (Anthropic dialect), `GET /v1/models`. Bearer auth with a Relayn key.
 - **Dashboard** — overview metrics, usage logs with filters and per-request detail, API key
-  lifecycle, model catalogue, integration snippets, subscription plans, support tickets,
-  profile.
+  lifecycle, model catalogue, integration snippets, the one-time Unlimited purchase, support
+  tickets, profile.
 - **Admin** — users, models, provider status, subscriptions, tickets, audit log; gated
   server-side.
 
@@ -531,9 +531,13 @@ so no numeric-precision behaviour changes between engines.
 
 ## Deliberate omissions
 
-- **No payment processing.** Plan changes are applied directly. The subscription service is
-  the seam a Stripe integration would sit behind (`plan`, `status`, `renewalDate`,
-  `tokenAllocation` are already modelled) but no card is ever charged.
+- **No recurring billing.** There is exactly one thing to buy — permanent `unlimited` for
+  $0.10, charged once — and it is granted only by a chain-verified USDC transfer
+  (`/api/payments/crypto/verify`) or a signature-verified provider callback
+  (`/api/payments/callback`). No card is ever stored or charged, `billingConnected` stays
+  false, and `/api/subscription` is `GET`-only: no request body can name a plan.
+- **No monthly tier ladder.** `pro`/`business`/`enterprise` remain as account states an
+  operator may assign; nothing sells them, so nothing advertises them.
 - **No email delivery.** `EMAIL_TRANSPORT=log` writes verification and reset links to the
   server log; the token flow itself is fully implemented and tested.
 - **Provider keys are optional.** Every adapter is complete, but a provider with no

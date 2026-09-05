@@ -118,7 +118,11 @@ function QuotaCard({ quota }: { quota: ShellQuota }) {
         href="/subscription"
         className="mt-2.5 block rounded-lg border border-line-strong py-1.5 text-center text-[11px] text-ink-muted transition-colors hover:bg-hover hover:text-ink"
       >
-        {quota.unlimited ? "View access" : "Manage plan"}
+        {/*
+         * Not "Manage plan": there is no plan ladder to manage. A metered account's only move is
+         * the one-time Unlimited purchase, so the label names that instead of implying a chooser.
+         */}
+        {quota.unlimited ? "View access" : "Go unlimited"}
       </Link>
     </div>
   );

@@ -160,11 +160,14 @@ export async function resolveModel(modelId: string, plan: string): Promise<Resol
     );
   }
   if (!planSatisfies(plan, model.minPlan)) {
+    // The wire `code` is unchanged — it is documented and clients match on it. The message names
+    // the one action that actually clears the gate: naming the required tier used to point callers
+    // at Pro/Business, which nothing sells. Unlimited satisfies every `minPlan` in the catalogue.
     throw new GatewayError(
       403,
       "permission_error",
       "model_not_available_on_plan",
-      `\`${modelId}\` requires the ${planOf(model.minPlan).name} plan or higher. Your plan is ${planOf(plan).name}.`,
+      `\`${modelId}\` is not available to this account. The one-time Unlimited purchase unlocks the full catalogue.`,
     );
   }
 
