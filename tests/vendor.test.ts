@@ -47,7 +47,7 @@ describe("resolveVendor", () => {
     const vendor = resolveVendor("o3", "openai");
     expect(vendor.slug).toBe("openai");
     expect(vendor.color).toBe("#DFE4EE");
-    expect(VENDOR_MARKS[vendor.slug]?.d).toBeTypeOf("string");
+    expect(VENDOR_MARKS[vendor.slug]?.paths).toHaveLength(1);
   });
 
   it("namespaces a fallback slug so it cannot borrow someone else's logo", () => {
@@ -96,12 +96,16 @@ describe("resolveVendor", () => {
       "madefaka/moonshotai/Kimi-K3",
       "madefaka/zai-org/GLM-4.7",
       "madefaka/Qwen/Qwen3-Max",
+      "x/grok-4",
+      "madefaka/microsoft/phi-5",
+      "madefaka/tencent/hunyuan-large",
+      "cohere/command-r-plus",
       "mock/relayn-echo",
     ];
 
     for (const id of ids) {
       const vendor = resolveVendor(id, id.split("/")[0]);
-      const hasMark = typeof VENDOR_MARKS[vendor.slug]?.d === "string";
+      const hasMark = (VENDOR_MARKS[vendor.slug]?.paths?.length ?? 0) > 0;
       if (vendor.color.startsWith("#")) {
         expect(hasMark, `${id} → ${vendor.slug} claims a brand colour`).toBe(true);
       }
@@ -123,11 +127,32 @@ describe("resolveVendor", () => {
       ["claude-opus-5", "anthropic"],
       // Unprefixed first-party row: the mark has to come from the provider, not the id.
       ["o3", "openai"],
+      // The four that used to be monograms. Every vendor the rules name now ships a mark; the
+      // only monogram left is Relayn's own sandbox, which is not a third party.
+      ["x-ai/grok-4-fast", "x-ai"],
+      ["madefaka/microsoft/phi-5-mini", "madefaka"],
+      ["madefaka/tencent/hunyuan-a13b", "madefaka"],
+      ["madefaka/CohereLabs/command-a", "madefaka"],
     ];
 
     for (const [id, provider] of rows) {
       const vendor = resolveVendor(id, provider);
-      expect(VENDOR_MARKS[vendor.slug]?.d, `${id} → ${vendor.slug}`).toBeTypeOf("string");
+      const mark = VENDOR_MARKS[vendor.slug];
+      expect(mark?.paths?.length, `${id} → ${vendor.slug}`).toBeGreaterThan(0);
+      for (const d of mark?.paths ?? []) expect(d, `${vendor.slug} path`).toMatch(/^[Mm]/);
+    }
+  });
+
+  it("keeps a multi-path mark as separate paths rather than one merged blob", () => {
+    // Microsoft is four squares and Cohere three ribbons in the source artwork. Concatenating
+    // subpaths only matches the original where none of them overlap, and under `evenodd` an
+    // overlap punches a hole — so the element count is preserved instead of reasoned about.
+    expect(VENDOR_MARKS["microsoft"]?.paths).toHaveLength(4);
+    expect(VENDOR_MARKS["cohere"]?.paths).toHaveLength(3);
+    // Every subpath is a complete path, so drawing them separately is well-defined.
+    for (const mark of Object.values(VENDOR_MARKS)) {
+      expect(mark.paths.length).toBeGreaterThan(0);
+      for (const d of mark.paths) expect(d.trim()).toMatch(/^[Mm]/);
     }
   });
 
@@ -169,6 +194,12 @@ describe("resolveVendor", () => {
       "x/ernie-5.0",
       "x/doubao-pro",
       "x/sonar-large",
+      // The three marks added after the first pass that claim a published colour. Hunyuan's own
+      // disc blue (#0055E9) is 3.1:1 here, which is why the tile wears the cyan from the same
+      // artwork; this assertion is what stops a future edit from putting the disc blue back.
+      "x-ai/grok-4-fast",
+      "madefaka/tencent/hunyuan-a13b",
+      "cohere/command-a",
     ];
 
     for (const id of ids) {

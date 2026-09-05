@@ -122,9 +122,9 @@ export async function POST(request: Request): Promise<Response> {
     failure.modelId = body.model;
     failure.streamed = body.stream === true;
 
-    assertQuota(identity.subscription);
+    assertQuota(identity);
 
-    const chain = await resolveChain(body.model, identity.subscription.plan);
+    const chain = await resolveChain(body.model, identity.plan);
     const primary = chain.links[0]!;
     failure.provider = primary.model.provider;
 

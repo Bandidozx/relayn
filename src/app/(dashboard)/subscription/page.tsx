@@ -20,19 +20,27 @@ import { getSubscription } from "@/server/services/subscription-service";
 export const metadata: Metadata = { title: "Subscription" };
 
 /**
- * One purchase, two account shapes.
+ * One purchase, three account shapes.
  *
  * There is no plan ladder to browse and nothing to switch between: an account is either metered
- * (the `free` default, or a tier an operator assigned by hand) or permanently unlimited because it
- * paid once. So this page sells exactly one thing and otherwise reports state.
+ * (the `free` default, or a tier an operator assigned by hand) or uncapped. So this page sells
+ * exactly one thing and otherwise reports state.
  *
  *  - a metered account has an allocation, a percentage and a monthly token window;
  *  - a paid unlimited account has none of those. Every cycle-shaped figure is replaced
  *    rather than filled with a sentinel, because a "2.0B allocation, resets 25 Sep" row would be
  *    a lie about a permanent purchase.
+ *  - an **administrator** is uncapped by role, without having paid. Same absent figures, but none
+ *    of the receipt copy: no price, no "paid once", no "permanent". `byRoleOnly` below gates every
+ *    one of those strings, because inventing a purchase is worse than showing none.
  *
- * `subscription.unlimited` is the database column and `subscription.permanent` additionally
- * asserts there is no expiry date, so the copy below never has to compare dates itself.
+ * `subscription.unlimitedByPayment` is the database column, `unlimitedByRole` is derived from the
+ * caller's role, `unlimited` is either, and `permanent` additionally asserts a paid account has no
+ * expiry date — so the copy below never has to compare dates itself.
+ *
+ * The purchase card stays visible to an exempt administrator on purpose. Their exemption ends with
+ * the role; buying is still a real, non-redundant action that sets their own permanent access, and
+ * hiding the card would also remove the only path an operator has to exercise the payment rail.
  *
  * There are also two purchase rails, and `payload.purchaseRail` decides which card appears. The
  * page does not inspect environment variables to work that out — the service already knows which
@@ -41,9 +49,11 @@ export const metadata: Metadata = { title: "Subscription" };
  */
 export default async function SubscriptionPage() {
   const { user } = await requireUser();
-  const payload = await getSubscription(user.id);
+  const payload = await getSubscription(user);
   const { subscription, unlimitedOffer, cryptoOffer, purchaseRail } = payload;
   const unlimited = subscription.unlimited;
+  /** Uncapped, but by role and with no payment behind it — so no receipt may be rendered. */
+  const byRoleOnly = subscription.unlimitedByRole && !subscription.unlimitedByPayment;
   const onChain = purchaseRail === "crypto";
   const priceLabel = onChain ? cryptoOffer.priceUsd : formatIdr(unlimitedOffer.priceIdr);
   const receipt = unlimitedOffer.latestPayment;
@@ -62,8 +72,17 @@ export default async function SubscriptionPage() {
         ["Status", subscription.status],
         ["Token ceiling", "None"],
         ["Used all-time", `${formatNumber(subscription.used)} tokens`],
-        ["Access", subscription.permanent ? "Permanent" : "Time-limited"],
-        ["Renewal", "None — one-time payment"],
+        [
+          "Access",
+          byRoleOnly
+            ? "While the admin role is held"
+            : subscription.permanent
+              ? "Permanent"
+              : "Time-limited",
+        ],
+        byRoleOnly
+          ? ["Granted by", "Admin role — nothing was paid"]
+          : ["Renewal", "None — one-time payment"],
         ["Member since", formatDate(subscription.createdAt)],
         ["Active keys", formatNumber(payload.activeKeys)],
       ]
@@ -85,9 +104,11 @@ export default async function SubscriptionPage() {
       <PageHeader
         title="Subscription"
         description={
-          unlimited
-            ? "Your access, what it cost and what it covers. There is no cycle to manage — the payment was made once."
-            : `Your allocation and rate limits. One ${priceLabel} payment removes both, permanently.`
+          byRoleOnly
+            ? "This account is not metered because it holds the admin role. Nothing was purchased, and the exemption lasts as long as the role does."
+            : unlimited
+              ? "Your access, what it cost and what it covers. There is no cycle to manage — the payment was made once."
+              : `Your allocation and rate limits. One ${priceLabel} payment removes both, permanently.`
         }
         action={<StatusBadge status={subscription.status} />}
       />
@@ -102,9 +123,11 @@ export default async function SubscriptionPage() {
           value={subscription.planName}
           tone="brand"
           hint={
-            unlimited
-              ? `${priceLabel} one-time · permanent access`
-              : `Renews ${formatDate(subscription.renewalDate)}`
+            byRoleOnly
+              ? "Admin role · not metered"
+              : unlimited
+                ? `${priceLabel} one-time · permanent access`
+                : `Renews ${formatDate(subscription.renewalDate)}`
           }
         />
         <StatCard
@@ -176,9 +199,11 @@ export default async function SubscriptionPage() {
               There are no monthly tiers to choose between and{" "}
               <span className="text-ink">no</span> recurring processor is connected, so nothing is
               ever charged to a card.{" "}
-              {unlimited
-                ? "Your access was paid for and is never revoked by this page."
-                : `Until the ${priceLabel} payment lands, this account runs on its current allocation and rate limit.`}{" "}
+              {byRoleOnly
+                ? "This account is exempt from metering because it holds the admin role — nothing was paid for it, and it is not a purchase. Buying Unlimited would still be worth doing if the role is ever handed over: paid access stays with the account, an exemption does not."
+                : unlimited
+                  ? "Your access was paid for and is never revoked by this page."
+                  : `Until the ${priceLabel} payment lands, this account runs on its current allocation and rate limit.`}{" "}
               <span className="numeric text-ink">billingConnected</span> reports{" "}
               <span className="numeric text-ink">{String(subscription.billingConnected)}</span>.
             </p>

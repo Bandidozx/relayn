@@ -1,5 +1,6 @@
 /**
- * GET  /api/admin/models — full catalogue including disabled entries.
+ * GET  /api/admin/models — full catalogue including disabled entries, plus the ids an operator
+ *                          deleted (kept so sync does not put them back).
  * POST /api/admin/models — add a catalogue row by hand.
  *
  * The POST exists for what sync cannot reach: an upstream with no `/models` endpoint, a model an
@@ -10,11 +11,11 @@
 import { apiRoute, ok, parseJson } from "@/lib/api/http";
 import { adminModelCreateSchema } from "@/lib/api/schemas";
 import { requireAdmin } from "@/lib/auth/guards";
-import { createManualModel, listAdminModels } from "@/server/services/admin-service";
+import { createManualModel, listAdminModelsPayload } from "@/server/services/admin-service";
 
 export const GET = apiRoute(async () => {
   await requireAdmin();
-  return ok({ models: await listAdminModels() });
+  return ok(await listAdminModelsPayload());
 });
 
 export const POST = apiRoute(async (request) => {

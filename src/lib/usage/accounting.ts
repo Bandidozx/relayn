@@ -5,7 +5,7 @@
 import "server-only";
 import { cache } from "react";
 import { prisma } from "@/lib/db";
-import { nextRenewalDate, planOf } from "@/lib/plans";
+import { effectivePlan, nextRenewalDate, planOf, roleGrantsUnlimited } from "@/lib/plans";
 import type { Subscription } from "@/lib/db-types";
 import type { TokenUsage } from "@/lib/providers/types";
 
@@ -76,6 +76,14 @@ export async function ensureSubscription(userId: string): Promise<Subscription> 
 export const getRequestSubscription = cache(ensureSubscription);
 
 export interface QuotaStatus {
+  /**
+   * The plan these figures describe — `effectivePlan(subscription.plan, role)`, so an exempt
+   * operator reads as `unlimited` while their row still says `free`.
+   *
+   * Deliberately **not** `Subscription.plan`. Every consumer of this field renders what the
+   * account may currently do; the stored plan is what it bought, and the places that must show
+   * that instead (the admin user list, audit metadata, payment records) read the row directly.
+   */
   plan: string;
   allocation: number;
   used: number;
@@ -85,22 +93,62 @@ export interface QuotaStatus {
   status: string;
   exhausted: boolean;
   /**
-   * True when no token ceiling applies. Every other number stays finite — `Infinity` would
-   * serialise to `null` through the RSC boundary and corrupt the runway projection — so
-   * consumers must branch on this flag rather than compare `remaining` against a sentinel.
+   * True when no token ceiling applies, for either reason below. Every other number stays finite
+   * — `Infinity` would serialise to `null` through the RSC boundary and corrupt the runway
+   * projection — so consumers must branch on this flag rather than compare `remaining` against a
+   * sentinel.
    */
   unlimited: boolean;
+  /**
+   * Uncapped because a verified payment set `Subscription.unlimited`.
+   *
+   * This is the one that means "this account paid", so it — never `unlimited` — is what gates
+   * receipt copy: the price, "paid once, yours for good", the permanent-access line. Telling an
+   * operator they bought something they did not would be a fabricated receipt.
+   */
+  unlimitedByPayment: boolean;
+  /**
+   * Uncapped because of `User.role`, for as long as the role lasts.
+   *
+   * Reported separately from `unlimitedByPayment` because an operator who also paid has both, and
+   * only the payment survives losing the role. Nothing derived from this flag is persisted.
+   */
+  unlimitedByRole: boolean;
 }
 
-export function quotaFrom(subscription: Subscription): QuotaStatus {
+/**
+ * The two things every entitlement decision needs: whose row to read, and what role holds it.
+ *
+ * `User` satisfies this structurally, and both entry points already have a freshly-read one —
+ * `getSession()` includes the user row, `authenticate()` resolves the key's owner — so threading
+ * this costs no query that was not already made. Services take it instead of a bare `userId`
+ * precisely so no service has to re-fetch the role, and so a caller cannot forget to.
+ */
+export interface AccountRef {
+  id: string;
+  role: string;
+}
+
+/**
+ * Derives quota from the subscription row and the role holding it.
+ *
+ * `account` is required rather than optional on purpose: making it optional would let every
+ * existing call site keep compiling while silently metering exempt operators, and the gateway is
+ * one of those call sites. A required parameter makes `tsc` enumerate them.
+ */
+export function quotaFrom(subscription: Subscription, account: { role: string }): QuotaStatus {
   const allocation = Math.max(0, subscription.tokenAllocation);
   const used = Math.max(0, subscription.tokensUsed);
   const remaining = Math.max(0, allocation - used);
   // The column, not the plan string and not the allocation: only `applyVerifiedPayment` sets
   // it, so an account cannot talk its way past the quota gate by having its plan renamed.
-  const unlimited = subscription.unlimited === true;
+  const unlimitedByPayment = subscription.unlimited === true;
+  // Read from the live `users` row every request, and stored nowhere. Losing the role therefore
+  // restores metering immediately, with no subscription row left holding the exemption open.
+  const unlimitedByRole = roleGrantsUnlimited(account.role);
+  const unlimited = unlimitedByPayment || unlimitedByRole;
   return {
-    plan: subscription.plan,
+    plan: effectivePlan(subscription.plan, account.role),
     allocation,
     used,
     remaining,
@@ -111,6 +159,8 @@ export function quotaFrom(subscription: Subscription): QuotaStatus {
     // allocation — which is what `remaining <= 0` would otherwise conclude.
     exhausted: unlimited ? false : remaining <= 0,
     unlimited,
+    unlimitedByPayment,
+    unlimitedByRole,
   };
 }
 
@@ -136,6 +186,11 @@ export interface RecordUsageInput {
  * Writes the usage log and advances the counters in one transaction, so a request can
  * never be billed without being logged (or logged without being billed).
  * Failed requests are logged but do not consume allocation.
+ *
+ * Exempt accounts are counted too. `tokensUsed` is what every "used all-time" figure reads, and
+ * an operator's traffic is real traffic against real upstream credentials — skipping the increment
+ * would make the one account most likely to be hammering a provider the one that appears idle.
+ * Being uncapped is a decision made when *reading* the counter, not a reason to stop writing it.
  */
 export async function recordUsage(input: RecordUsageInput): Promise<void> {
   const billable = input.status === "success" && input.usage.totalTokens > 0;

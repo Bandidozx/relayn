@@ -50,6 +50,14 @@ const SOURCES = [
   { slug: "moonshot", si: "kimi" },
   { slug: "qwen", si: "qwen" },
   { slug: "zai", lobe: "zai.svg" },
+  // Same product-over-company reasoning as Kimi: the ids say `grok-*`, and a bare xAI "X" in a
+  // 22px tile is hard to tell from the social network's.
+  { slug: "xai", lobe: "grok.svg" },
+  // Four squares, so four <path> elements. simple-icons 16 has no Microsoft mark at all.
+  { slug: "microsoft", lobe: "microsoft.svg" },
+  // The product mark again — `hunyuan.svg`, not `tencent.svg`, because the ids say `hunyuan-*`.
+  { slug: "tencent", lobe: "hunyuan.svg" },
+  { slug: "cohere", lobe: "cohere.svg" },
 ];
 
 const bySlug = new Map();
@@ -57,29 +65,41 @@ for (const icon of Object.values(simpleIcons)) {
   if (icon && typeof icon === "object" && icon.slug) bySlug.set(icon.slug, icon);
 }
 
-/** Pulls the single path out of a lobehub SVG, and whether it was authored for even-odd fill. */
+/**
+ * Pulls the paths out of a lobehub SVG, and whether it was authored for even-odd fill.
+ *
+ * Every path is kept rather than merged into one. Concatenating subpaths is only equivalent to
+ * drawing them separately when none of them overlap — under `evenodd` an overlap punches a hole —
+ * and deciding that needs geometry, per logo, by hand. Emitting the same element count the source
+ * has is faithful by construction: Microsoft is four squares and Cohere is three ribbons in the
+ * artwork, so they are four and three `<path>` elements here too.
+ */
 function readLobe(file) {
   const dir = require.resolve("@lobehub/icons-static-svg/package.json").replace(/package\.json$/, "");
   const svg = readFileSync(`${dir}icons/${file}`, "utf8");
   const paths = [...svg.matchAll(/<path[^>]*\bd="([^"]+)"/g)].map((m) => m[1]);
-  if (paths.length !== 1) {
-    throw new Error(`${file}: expected exactly 1 path, found ${paths.length}`);
+  if (paths.length === 0) throw new Error(`${file}: no <path> found`);
+  // Anything else — <circle>, <rect>, a gradient — would silently vanish from the copy.
+  const others = [...svg.matchAll(/<(circle|rect|ellipse|polygon|polyline|line|use|image)\b/g)];
+  if (others.length > 0) {
+    throw new Error(`${file}: contains non-path shapes (${others.map((m) => m[1]).join(", ")})`);
   }
   const viewBox = svg.match(/viewBox="([^"]+)"/)?.[1];
   if (viewBox !== "0 0 24 24") throw new Error(`${file}: unexpected viewBox ${viewBox}`);
-  return { d: paths[0], evenOdd: /fill-rule="evenodd"/.test(svg) };
+  return { paths, evenOdd: /fill-rule="evenodd"/.test(svg) };
 }
 
 const entries = SOURCES.map((source) => {
   if (source.lobe) return { slug: source.slug, ...readLobe(source.lobe), from: `lobehub ${source.lobe}` };
   const icon = bySlug.get(source.si);
   if (!icon) throw new Error(`simple-icons has no "${source.si}" — check the installed version`);
-  return { slug: source.slug, d: icon.path, evenOdd: false, from: `simple-icons ${source.si}` };
+  return { slug: source.slug, paths: [icon.path], evenOdd: false, from: `simple-icons ${source.si}` };
 });
 
 const body = entries
-  .map(({ slug, d, evenOdd, from }) => {
-    const fields = evenOdd ? `d: ${JSON.stringify(d)}, evenOdd: true` : `d: ${JSON.stringify(d)}`;
+  .map(({ slug, paths, evenOdd, from }) => {
+    const d = `paths: [${paths.map((one) => JSON.stringify(one)).join(", ")}]`;
+    const fields = evenOdd ? `${d}, evenOdd: true` : d;
     return `  // ${from}\n  ${slug}: { ${fields} },`;
   })
   .join("\n");
@@ -117,8 +137,13 @@ const file = `/**
  */
 
 export interface VendorMarkShape {
-  /** Path data on a \`0 0 24 24\` viewBox, drawn with \`fill: currentColor\`. */
-  d: string;
+  /**
+   * One entry per \`<path>\` in the source artwork, on a \`0 0 24 24\` viewBox, each drawn with
+   * \`fill: currentColor\`. Most marks are a single path; Microsoft's four squares and Cohere's
+   * three ribbons are not, and they are kept as separate elements rather than concatenated
+   * because merging subpaths changes the result wherever they overlap.
+   */
+  paths: string[];
   /**
    * True when the artwork was authored for \`fill-rule: evenodd\`, where overlapping subpaths
    * punch holes instead of merging. Applying the wrong rule silently fills a logo solid, so it
@@ -134,4 +159,7 @@ ${body}
 
 writeFileSync(OUT, file);
 console.log(`wrote ${OUT} — ${entries.length} marks`);
-for (const entry of entries) console.log(`  ${entry.slug.padEnd(13)} ${entry.from}`);
+for (const entry of entries) {
+  const shape = entry.paths.length === 1 ? "" : ` (${entry.paths.length} paths)`;
+  console.log(`  ${entry.slug.padEnd(13)} ${entry.from}${shape}`);
+}

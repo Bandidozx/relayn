@@ -452,3 +452,33 @@ model ProviderConfig {
   @@index([custom, enabled])
   @@map("provider_configs")
 }
+
+/// Catalogue ids an operator deleted, so sync does not put them back.
+///
+/// Deleting a synced row on its own does not stick: `syncProviderCatalogue` lists the upstream
+/// again and recreates anything it does not recognise, so the row would reappear on the next run
+/// looking exactly as it did. This table is the memory that makes a deletion permanent — sync
+/// skips every id in it, and neither creates nor reports it as stale.
+///
+/// It holds ids, not rows. Restoring does not resurrect the old record: it removes the suppression
+/// and lets the next sync fetch the model fresh from its upstream. Nothing here is invented, which
+/// is the point — prices and context windows come from the provider, and this table has no
+/// business remembering a snapshot of them.
+///
+/// Hand-added (`manual`) models leave no entry: sync never created them and never will, so
+/// deleting one is already permanent.
+model RemovedModel {
+  id        String   @id @default(cuid())
+  /// The `AiModel.modelId` that was deleted, e.g. "madefaka/tencent/hunyuan-a13b".
+  modelId   String   @unique
+  /// Provider the id belonged to, so the list can be grouped without parsing the id.
+  provider  String
+  /// Name it carried when it was deleted. Display only — sync re-reads the real one on restore.
+  name      String   @default("")
+  /// Id of the admin who deleted it. Kept for the dashboard; the audit log has the full record.
+  removedBy String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([provider])
+  @@map("removed_models")
+}

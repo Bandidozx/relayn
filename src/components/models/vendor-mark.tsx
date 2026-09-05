@@ -59,7 +59,8 @@ export function VendorMark({ vendor, className, size = "md" }: VendorMarkProps) 
           viewBox="0 0 24 24"
           fill="currentColor"
           // Set per mark, not once for all of them: a path authored for even-odd fills solid
-          // under the default rule, which turns a logo with counters into a blob.
+          // under the default rule, which turns a logo with counters into a blob. On the <svg>
+          // so it inherits, which is where the source artwork carries it too.
           fillRule={mark.evenOdd ? "evenodd" : undefined}
           clipRule={mark.evenOdd ? "evenodd" : undefined}
           className={cn(
@@ -67,7 +68,11 @@ export function VendorMark({ vendor, className, size = "md" }: VendorMarkProps) 
             iconSizes,
           )}
         >
-          <path d={mark.d} />
+          {/* One element per path in the source. Merging them would change any logo whose
+              subpaths overlap, so the element count is preserved instead. */}
+          {mark.paths.map((d) => (
+            <path key={d} d={d} />
+          ))}
         </svg>
       ) : (
         <span className="font-mono text-xs font-bold tracking-wider text-ink/90">

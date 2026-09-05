@@ -115,7 +115,7 @@ async function main() {
   check("starts on the Free plan", sub.plan === "free", `plan was ${sub.plan}`);
   check("is not unlimited", sub.unlimited === false);
   check("has no plan expiry", sub.planExpiresAt === null);
-  check("reports a finite quota", quotaFrom(sub).unlimited === false);
+  check("reports a finite quota", quotaFrom(sub, alice).unlimited === false);
 
   // ── 9 / 10. Amount and status gates ───────────────────────────────────────────────────
   console.log("\nThe callback gates");
@@ -191,7 +191,8 @@ async function main() {
   check("records the amount received", paidRow?.paidAmount === UNLIMITED_PRICE_IDR);
   const firstAppliedAt = paidRow?.appliedAt?.getTime() ?? 0;
 
-  const quota = quotaFrom(sub);
+  // `alice` is a plain `user`, so this asserts the payment alone did it — not a role exemption.
+  const quota = quotaFrom(sub, alice);
   check("quotaFrom reports unlimited", quota.unlimited === true);
   check("quotaFrom never reports exhaustion", quota.exhausted === false);
   const display = describeQuota(quota);

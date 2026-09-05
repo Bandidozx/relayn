@@ -5,7 +5,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
-import { planOf } from "@/lib/plans";
+import { effectivePlan, planOf } from "@/lib/plans";
 import { getRequestSubscription } from "@/lib/usage/accounting";
 
 export interface ProfileConnection {
@@ -52,6 +52,11 @@ export async function getProfile(userId: string): Promise<ProfileView | null> {
   ]);
   if (!user) return null;
 
+  // The effective plan, matching the sidebar and the subscription page. This panel sits next to a
+  // role badge, so showing "Free" beside "Admin" while the account is uncapped would be the one
+  // place in the app that contradicts the others.
+  const plan = effectivePlan(subscription.plan, user.role);
+
   return {
     id: user.id,
     name: user.name,
@@ -62,8 +67,8 @@ export async function getProfile(userId: string): Promise<ProfileView | null> {
     emailVerifiedAt: user.emailVerifiedAt?.toISOString() ?? null,
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
-    plan: subscription.plan,
-    planName: planOf(subscription.plan).name,
+    plan,
+    planName: planOf(plan).name,
     activeSessions: sessions,
     activeKeys: keys,
     totalRequests: requests,

@@ -15,5 +15,5 @@ export const GET = apiRoute(async (request) => {
   const raw = Number.parseInt(new URL(request.url).searchParams.get("days") ?? "14", 10);
   const days = ALLOWED_WINDOWS.has(raw) ? raw : 14;
 
-  return ok(await getOverview(user.id, days));
+  return ok(await getOverview(user, days));
 });

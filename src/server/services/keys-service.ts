@@ -10,8 +10,8 @@ import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { badRequest, conflict, notFound } from "@/lib/api/http";
 import { generateApiKey } from "@/lib/security/tokens";
-import { planOf } from "@/lib/plans";
-import { ensureSubscription } from "@/lib/usage/accounting";
+import { effectivePlan, planOf } from "@/lib/plans";
+import { ensureSubscription, type AccountRef } from "@/lib/usage/accounting";
 
 export interface ApiKeyView {
   id: string;
@@ -60,19 +60,23 @@ export interface CreatedApiKey {
 }
 
 export async function createApiKey(
-  userId: string,
+  account: AccountRef,
   name: string,
   request: Request,
   actorEmail: string,
 ): Promise<CreatedApiKey> {
+  const userId = account.id;
   const subscription = await ensureSubscription(userId);
-  const limit = planOf(subscription.plan).maxApiKeys;
+  // The effective plan: an account exempt from the token ceiling must not still be held to the
+  // Free plan's single-key cap, which would read as a bug rather than as a limit.
+  const plan = planOf(effectivePlan(subscription.plan, account.role));
+  const limit = plan.maxApiKeys;
 
   if (limit !== null) {
     const active = await prisma.apiKey.count({ where: { userId, status: "active" } });
     if (active >= limit) {
       throw conflict(
-        `The ${planOf(subscription.plan).name} plan allows ${limit} active ${limit === 1 ? "key" : "keys"}. Revoke one, or unlock uncapped keys with the one-time Unlimited purchase.`,
+        `The ${plan.name} plan allows ${limit} active ${limit === 1 ? "key" : "keys"}. Revoke one, or unlock uncapped keys with the one-time Unlimited purchase.`,
       );
     }
   }

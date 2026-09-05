@@ -127,9 +127,9 @@ export async function POST(request: Request): Promise<Response> {
     failure.modelId = body.model;
     failure.streamed = body.stream === true;
 
-    assertQuota(identity.subscription);
+    assertQuota(identity);
 
-    const chain = await resolveChain(body.model, identity.subscription.plan);
+    const chain = await resolveChain(body.model, identity.plan);
     failure.provider = chain.links[0]!.model.provider;
 
     // The provider contract is OpenAI-shaped, so a top-level `system` becomes a leading

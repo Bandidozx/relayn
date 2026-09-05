@@ -43,6 +43,7 @@ export type AuditAction =
   | "admin.model_updated"
   | "admin.model_created"
   | "admin.model_deleted"
+  | "admin.model_restored"
   | "admin.model_tested"
   | "admin.models_synced"
   | "admin.provider_created"

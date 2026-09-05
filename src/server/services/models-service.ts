@@ -8,8 +8,8 @@
  */
 import "server-only";
 import { prisma } from "@/lib/db";
-import { planOf, planSatisfies } from "@/lib/plans";
-import { getRequestSubscription } from "@/lib/usage/accounting";
+import { effectivePlan, planOf, planSatisfies } from "@/lib/plans";
+import { getRequestSubscription, type AccountRef } from "@/lib/usage/accounting";
 
 export interface ModelView {
   id: string;
@@ -60,9 +60,11 @@ export function visibleDescription(value: string): string {
   return value.includes("Discovered by catalogue sync") ? "" : value.trim();
 }
 
-export async function listModelsForUser(userId: string): Promise<ModelCatalogue> {
-  const subscription = await getRequestSubscription(userId);
-  const plan = subscription.plan;
+export async function listModelsForUser(account: AccountRef): Promise<ModelCatalogue> {
+  const subscription = await getRequestSubscription(account.id);
+  // The effective plan, so what the catalogue shows as unlocked is what the gateway will actually
+  // serve. Rendering a padlock the gateway ignores is the same bug as the reverse.
+  const plan = effectivePlan(subscription.plan, account.role);
 
   const rows = await prisma.aiModel.findMany({
     where: { enabled: true },

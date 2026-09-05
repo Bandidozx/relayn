@@ -18,5 +18,5 @@ import { getSubscription } from "@/server/services/subscription-service";
 
 export const GET = apiRoute(async () => {
   const { user } = await requireUser();
-  return ok(await getSubscription(user.id));
+  return ok(await getSubscription(user));
 });

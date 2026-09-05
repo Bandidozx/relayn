@@ -15,7 +15,7 @@ export const GET = apiRoute(async () => {
 export const POST = apiRoute(async (request) => {
   const { user } = await requireUser();
   const body = await parseJson(request, createApiKeySchema);
-  const created = await createApiKey(user.id, body.name, request, user.email);
+  const created = await createApiKey(user, body.name, request, user.email);
 
   return ok(
     {

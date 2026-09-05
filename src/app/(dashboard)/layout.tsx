@@ -19,7 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // The CSRF cookie that client writes echo back is issued by `src/proxy.ts`;
   // a layout is not allowed to set cookies.
 
-  const quota = quotaFrom(await getRequestSubscription(session.user.id));
+  const quota = quotaFrom(await getRequestSubscription(session.user.id), session.user);
 
   const user: ShellUser = {
     id: session.user.id,
@@ -38,6 +38,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     percentUsed: quota.percentUsed,
     renewalDate: quota.renewalDate.toISOString(),
     unlimited: quota.unlimited,
+    unlimitedByPayment: quota.unlimitedByPayment,
+    unlimitedByRole: quota.unlimitedByRole,
   };
 
   return (

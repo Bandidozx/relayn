@@ -266,7 +266,7 @@ export interface AdminModelRow {
   upstreamModel: string;
   /** Ordered catalogue ids retried when this model's upstream fails transiently. */
   fallbacks: string[];
-  /** True for a hand-added row: sync leaves it alone and only these may be deleted. */
+  /** True for a hand-added row: sync neither overwrites nor recreates it. */
   manual: boolean;
 }
 
@@ -414,7 +414,7 @@ export async function createManualModel(
   actor: { id: string; email: string },
   input: AdminModelCreateInput,
   request: Request,
-): Promise<{ models: AdminModelRow[]; probe?: ModelProbeResult }> {
+): Promise<AdminModelsPayload & { probe?: ModelProbeResult }> {
   if (input.minPlan !== undefined && !isPlanId(input.minPlan)) throw badRequest("Unknown plan.");
   if (input.category !== undefined && !isModelCategory(input.category)) {
     throw badRequest("Unknown category.");
@@ -447,6 +447,11 @@ export async function createManualModel(
   }
 
   const category = input.category ?? inferCategory(upstreamModel);
+  // A hand-added row and a suppression for the same id would contradict each other in the UI —
+  // listed as live and as removed at once. Adding the id back by hand is a clearer statement of
+  // intent than the earlier deletion, so the suppression goes. `deleteMany` because there may be
+  // nothing to delete, which is the common case.
+  await prisma.removedModel.deleteMany({ where: { modelId: input.modelId } });
   await prisma.aiModel.create({
     data: {
       modelId: input.modelId,
@@ -487,32 +492,71 @@ export async function createManualModel(
     request,
   });
 
-  const models = await listAdminModels();
-  return probe ? { models, probe } : { models };
+  const payload = await listAdminModelsPayload();
+  return probe ? { ...payload, probe } : payload;
 }
 
 /**
- * Removes a hand-added catalogue row.
- *
- * Only `manual` rows: a synced row would be recreated by the next sync, so deleting it would
- * look like it worked and then silently undo itself. Those are disabled instead.
- *
- * A row still named by another model's fallback chain is refused — deleting it would leave a
- * chain quietly stepping over a gap. Usage history is deliberately *not* a blocker: `usage_logs`
- * stores `modelId` as a string, so past rows keep their billing record either way.
+ * A catalogue id an operator deleted, kept so sync does not put it back.
  */
-export async function deleteManualModel(
+export interface RemovedModelRow {
+  id: string;
+  modelId: string;
+  provider: string;
+  /** Name the row carried when it was deleted. Display only. */
+  name: string;
+  removedAt: string;
+}
+
+/**
+ * Everything Admin → Models renders. Both halves travel together because a delete moves a row
+ * from one to the other, and a client that refreshed only the first would show it as simply gone.
+ */
+export interface AdminModelsPayload {
+  models: AdminModelRow[];
+  removed: RemovedModelRow[];
+}
+
+export async function listRemovedModels(): Promise<RemovedModelRow[]> {
+  const rows = await prisma.removedModel.findMany({ orderBy: { createdAt: "desc" } });
+  return rows.map((row) => ({
+    id: row.id,
+    modelId: row.modelId,
+    provider: row.provider,
+    name: row.name,
+    removedAt: row.createdAt.toISOString(),
+  }));
+}
+
+export async function listAdminModelsPayload(): Promise<AdminModelsPayload> {
+  const [models, removed] = await Promise.all([listAdminModels(), listRemovedModels()]);
+  return { models, removed };
+}
+
+/**
+ * Deletes a catalogue row.
+ *
+ * Two kinds of row, one behaviour, different bookkeeping. A `manual` row was typed in by an
+ * operator and sync never touches it, so deleting it is already final and nothing is recorded. A
+ * **synced** row is different: the next sync lists the upstream, does not recognise the id, and
+ * creates it again — same name, same prices, no trace of the deletion. So the id goes into
+ * `removed_models` in the same transaction as the delete, and sync skips it from then on. That is
+ * what makes this button mean what it says, and it is why deleting a synced row is now allowed at
+ * all; the old advice to disable it instead only existed because deletion did not stick.
+ *
+ * A row still named by another model's fallback chain is refused — deleting it would leave a chain
+ * quietly stepping over a gap. Usage history is deliberately *not* a blocker: `usage_logs` stores
+ * `modelId` as a string with no foreign key, so past requests keep their billing record either
+ * way, and refusing to tidy the catalogue because a model was once used would mean never tidying
+ * it at all.
+ */
+export async function deleteCatalogueModel(
   actor: { id: string; email: string },
   modelRowId: string,
   request: Request,
-): Promise<AdminModelRow[]> {
+): Promise<AdminModelsPayload> {
   const existing = await prisma.aiModel.findUnique({ where: { id: modelRowId } });
   if (!existing) throw notFound("Model not found.");
-  if (!existing.manual) {
-    throw badRequest(
-      `\`${existing.modelId}\` came from catalogue sync and would be recreated by the next run. Disable it instead.`,
-    );
-  }
 
   const referencedBy = (
     await prisma.aiModel.findMany({
@@ -528,7 +572,26 @@ export async function deleteManualModel(
     );
   }
 
-  await prisma.aiModel.delete({ where: { id: modelRowId } });
+  // One transaction: a delete that committed without its suppression row would be undone by the
+  // next sync, which is the exact failure this table exists to prevent.
+  await prisma.$transaction([
+    prisma.aiModel.delete({ where: { id: modelRowId } }),
+    ...(existing.manual
+      ? []
+      : [
+          prisma.removedModel.upsert({
+            where: { modelId: existing.modelId },
+            // Re-deleting after a restore is ordinary, so this is an upsert rather than a create.
+            update: { name: existing.name, removedBy: actor.id },
+            create: {
+              modelId: existing.modelId,
+              provider: existing.provider,
+              name: existing.name,
+              removedBy: actor.id,
+            },
+          }),
+        ]),
+  ]);
 
   await recordAudit({
     action: "admin.model_deleted",
@@ -536,11 +599,49 @@ export async function deleteManualModel(
     actorEmail: actor.email,
     targetType: "model",
     targetId: existing.modelId,
-    metadata: { provider: existing.provider, upstreamModel: existing.upstreamModel ?? "" },
+    metadata: {
+      provider: existing.provider,
+      upstreamModel: existing.upstreamModel ?? "",
+      manual: existing.manual,
+      // False for a manual row: nothing to suppress, because sync would never create it.
+      suppressed: !existing.manual,
+    },
     request,
   });
 
-  return listAdminModels();
+  return listAdminModelsPayload();
+}
+
+/**
+ * Lifts a deletion, so the next catalogue sync may create the row again.
+ *
+ * Deliberately does not recreate the row itself. The suppression stores an id, not a snapshot —
+ * prices, context window and the upstream identifier belong to the provider, and restoring a copy
+ * of them would serve numbers that were correct whenever the model happened to be deleted. So this
+ * removes the block and the row comes back from the upstream on the next sync, or never, if the
+ * upstream has since dropped it. Nothing is invented either way.
+ */
+export async function restoreRemovedModel(
+  actor: { id: string; email: string },
+  removedRowId: string,
+  request: Request,
+): Promise<AdminModelsPayload> {
+  const existing = await prisma.removedModel.findUnique({ where: { id: removedRowId } });
+  if (!existing) throw notFound("That model is not on the removed list.");
+
+  await prisma.removedModel.delete({ where: { id: removedRowId } });
+
+  await recordAudit({
+    action: "admin.model_restored",
+    userId: actor.id,
+    actorEmail: actor.email,
+    targetType: "model",
+    targetId: existing.modelId,
+    metadata: { provider: existing.provider },
+    request,
+  });
+
+  return listAdminModelsPayload();
 }
 
 export interface ModelProbeResult {
@@ -631,7 +732,7 @@ export async function syncAdminModels(
   actor: { id: string; email: string },
   providers: string[] | undefined,
   request: Request,
-): Promise<{ models: AdminModelRow[]; summary: SyncSummary }> {
+): Promise<AdminModelsPayload & { summary: SyncSummary }> {
   const summary = await syncProviderCatalogue(providers);
 
   await recordAudit({
@@ -644,6 +745,7 @@ export async function syncAdminModels(
       created: summary.created,
       updated: summary.updated,
       preserved: summary.preserved,
+      suppressed: summary.suppressed,
       skipped: summary.skipped,
       providers: summary.results.map((entry) => ({
         provider: entry.provider,
@@ -651,6 +753,7 @@ export async function syncAdminModels(
         created: entry.created,
         updated: entry.updated,
         preserved: entry.preserved,
+        suppressed: entry.suppressed,
         stale: entry.stale.length,
         ...(entry.error ? { error: entry.error } : {}),
       })),
@@ -658,7 +761,7 @@ export async function syncAdminModels(
     request,
   });
 
-  return { models: await listAdminModels(), summary };
+  return { ...(await listAdminModelsPayload()), summary };
 }
 
 export interface AdminProviderRow extends ProviderStatus {

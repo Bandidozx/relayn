@@ -6,7 +6,7 @@ import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui/card";
 import { TableWrap, Td, Th, Tr } from "@/components/ui/table";
 import { requireUser } from "@/lib/auth/guards";
 import { env } from "@/lib/env";
-import { PLANS, PUBLIC_PLAN_ORDER, planOf, type PlanId } from "@/lib/plans";
+import { PLANS, PUBLIC_PLAN_ORDER, effectivePlan, planOf, type PlanId } from "@/lib/plans";
 import { formatCompact, formatNumber } from "@/lib/format";
 import {
   PLACEHOLDER_KEY,
@@ -103,10 +103,12 @@ const PARAMS: [string, string, string][] = [
 export default async function DocsPage() {
   const { user } = await requireUser();
   const [catalogue, subscription] = await Promise.all([
-    listModelsForUser(user.id),
+    listModelsForUser(user),
     getRequestSubscription(user.id),
   ]);
-  const plan = planOf(subscription.plan);
+  // The effective plan, so the rate-limit table's highlighted row is the ceiling this account is
+  // actually held to rather than the one its stored plan implies.
+  const plan = planOf(effectivePlan(subscription.plan, user.role));
 
   // Examples use a model this account can actually call, so copy-paste works first try.
   const sample =

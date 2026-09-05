@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Models" };
 
 export default async function ModelsPage() {
   const { user } = await requireUser();
-  const catalogue = await listModelsForUser(user.id);
+  const catalogue = await listModelsForUser(user);
 
   if (catalogue.models.length === 0) {
     return (

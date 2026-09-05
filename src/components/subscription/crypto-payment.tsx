@@ -163,8 +163,17 @@ export function CryptoPaymentCard({
     }
   }
 
-  // ---- already paid ------------------------------------------------------------------
-  if (subscription.unlimited) {
+  /*
+   * ---- already paid ------------------------------------------------------------------
+   *
+   * `unlimitedByPayment`, not `unlimited`. An administrator is uncapped by role without having
+   * bought anything, and every string in this branch is a receipt — "Unlimited Permanent", "Paid
+   * once, yours for good", "$0.50 one-time". Rendering it for an account that never paid would
+   * invent a purchase, and it would also hide the purchase card from the one account most likely
+   * to need to exercise this rail. So an exempt operator falls through to the offer below; the
+   * moment a payment actually settles, this branch is the one that applies.
+   */
+  if (subscription.unlimitedByPayment) {
     const receipt = result?.payment?.status === "paid" ? result.payment : null;
     return (
       <Card className="border-brand/40 ring-1 ring-brand/15">
@@ -288,7 +297,10 @@ export function CryptoPaymentCard({
               </p>
               <p className="mt-1">
                 The operator must set {offer.missingEnvVars.join(", ")} before this form can do
-                anything. Until then this account stays on {subscription.planName}.
+                anything.{" "}
+                {subscription.unlimitedByRole
+                  ? "This account is not metered while it holds the admin role, so nothing is blocked in the meantime."
+                  : `Until then this account stays on ${subscription.planName}.`}
               </p>
             </div>
           )}

@@ -18,6 +18,11 @@
  * Rows marked `manual` are skipped entirely — not updated, not reported as stale. They exist
  * because an operator typed them in, often for a model the upstream serves but does not list, so
  * both "refresh it from the listing" and "the listing has dropped it" are the wrong answer.
+ *
+ * Ids in `removed_models` are skipped too, and for a sharper reason: without that check a deletion
+ * would not survive. An id the operator deleted is, by definition, one this function no longer
+ * recognises, so the branch below would create it again and the row would be back — same name,
+ * same prices — with nothing in the UI to explain why. Skipping is what makes "delete" mean it.
  */
 import "server-only";
 import { prisma } from "@/lib/db";
@@ -33,6 +38,8 @@ export interface ProviderSyncResult {
   updated: number;
   /** Hand-added rows the upstream also lists. Left exactly as the operator wrote them. */
   preserved: number;
+  /** Ids the upstream lists that an operator deleted. Skipped so the deletion sticks. */
+  suppressed: number;
   /** Catalogue rows for this provider that the upstream no longer lists. */
   stale: string[];
   /** Present when the provider could not be reached at all. */
@@ -44,6 +51,7 @@ export interface SyncSummary {
   created: number;
   updated: number;
   preserved: number;
+  suppressed: number;
   /** Providers that are registered but have no credential, so they were skipped. */
   skipped: string[];
 }
@@ -101,6 +109,7 @@ async function syncOne(provider: ModelProvider, sortBase: number): Promise<Provi
     created: 0,
     updated: 0,
     preserved: 0,
+    suppressed: 0,
     stale: [],
   };
 
@@ -113,15 +122,24 @@ async function syncOne(provider: ModelProvider, sortBase: number): Promise<Provi
   }
 
   result.discovered = listed.length;
-  const existing = await prisma.aiModel.findMany({
-    where: { provider: provider.id },
-    select: { modelId: true, manual: true },
-  });
+  const [existing, deleted] = await Promise.all([
+    prisma.aiModel.findMany({
+      where: { provider: provider.id },
+      select: { modelId: true, manual: true },
+    }),
+    prisma.removedModel.findMany({
+      where: { provider: provider.id },
+      select: { modelId: true },
+    }),
+  ]);
   const known = new Set(existing.map((row) => row.modelId));
   // Hand-added rows are the operator's, not the upstream's. Sync must not rewrite the
   // `upstreamModel` or the prices someone typed in, and must not report them as stale when the
   // upstream does not list them — being unlisted is the usual reason a row was added by hand.
   const manual = new Set(existing.filter((row) => row.manual).map((row) => row.modelId));
+  // Ids an operator deleted. There is no row to protect here — the row is gone, which is why
+  // this list has to exist at all.
+  const removed = new Set(deleted.map((row) => row.modelId));
   const seen = new Set<string>();
 
   let index = 0;
@@ -144,6 +162,10 @@ async function syncOne(provider: ModelProvider, sortBase: number): Promise<Provi
 
     if (manual.has(modelId)) {
       result.preserved++;
+    } else if (removed.has(modelId)) {
+      // Checked before `known` as well as before the create: a suppressed id should have no row,
+      // but if one exists anyway it is not sync's to refresh — restore is the way back.
+      result.suppressed++;
     } else if (known.has(modelId)) {
       await prisma.aiModel.update({ where: { modelId }, data: upstreamOwned });
       result.updated++;
@@ -171,7 +193,7 @@ async function syncOne(provider: ModelProvider, sortBase: number): Promise<Provi
   }
 
   result.stale = [...known]
-    .filter((modelId) => !seen.has(modelId) && !manual.has(modelId))
+    .filter((modelId) => !seen.has(modelId) && !manual.has(modelId) && !removed.has(modelId))
     .sort();
   return result;
 }
@@ -205,6 +227,7 @@ export async function syncProviderCatalogue(only?: string[]): Promise<SyncSummar
     created: results.reduce((sum, entry) => sum + entry.created, 0),
     updated: results.reduce((sum, entry) => sum + entry.updated, 0),
     preserved: results.reduce((sum, entry) => sum + entry.preserved, 0),
+    suppressed: results.reduce((sum, entry) => sum + entry.suppressed, 0),
     skipped,
   };
 }

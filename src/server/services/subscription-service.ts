@@ -15,6 +15,11 @@
  * `CRYPTO_PAYMENT_*` set, `unlimitedOffer` (QRIS) otherwise. Both are computed because whether a
  * rail is configured is a server fact the page should not have to re-derive, and each reads its
  * own most recent payment row so a receipt from one rail can never be rendered as the other's.
+ *
+ * An operator reads as unlimited here too, but by role rather than by purchase, and the view keeps
+ * the two apart (`unlimitedByRole` / `unlimitedByPayment`) precisely because this module's other
+ * job is rendering receipts. The exemption is derived per request and writes nothing, so the
+ * one-write-path claim above is untouched.
  */
 import "server-only";
 import { prisma } from "@/lib/db";
@@ -29,9 +34,13 @@ import { paymentsConfigured } from "@/lib/payments/registry";
 import { cryptoPaymentsConfigured } from "@/lib/payments/crypto/registry";
 import { latestPaymentForUser, type PaymentView } from "@/server/services/payment-service";
 import { getCryptoOffer, type CryptoOffer } from "@/server/services/crypto-payment-service";
-import { ensureSubscription, quotaFrom } from "@/lib/usage/accounting";
+import { ensureSubscription, quotaFrom, type AccountRef } from "@/lib/usage/accounting";
 
 export interface SubscriptionView {
+  /**
+   * The plan whose limits this view reports — the effective one, so an exempt operator's page
+   * describes what they can actually do. `Subscription.plan` is unchanged in the database.
+   */
   plan: string;
   planName: string;
   status: string;
@@ -45,11 +54,22 @@ export interface SubscriptionView {
   createdAt: string;
   /** Always false in this build — documented so the UI never implies recurring billing exists. */
   billingConnected: boolean;
-  /** No token ceiling applies. Mirrors `QuotaStatus.unlimited` (the database column). */
+  /** No token ceiling applies, for either reason. Mirrors `QuotaStatus.unlimited`. */
   unlimited: boolean;
+  /**
+   * Uncapped because this account paid. Everything that reads like a receipt — the price, the
+   * "paid once" line, the permanent-access row — must key on this rather than `unlimited`, or an
+   * exempt operator is shown a purchase they never made.
+   */
+  unlimitedByPayment: boolean;
+  /** Uncapped because of the caller's role, for as long as they hold it. */
+  unlimitedByRole: boolean;
   /**
    * Unlimited *and* with no expiry date — the only shape a paid unlimited account may have.
    * The UI reads this rather than comparing dates, so "permanent" has one definition.
+   *
+   * Keyed on the payment, not on `unlimited`: a role exemption is permanent only for as long as
+   * the role is, so calling it permanent would overstate it.
    */
   permanent: boolean;
   /** Null for a permanent plan. Present only if a future dated plan is ever introduced. */
@@ -82,10 +102,13 @@ export interface SubscriptionPayload {
   activeKeys: number;
 }
 
-export async function getSubscription(userId: string): Promise<SubscriptionPayload> {
+export async function getSubscription(account: AccountRef): Promise<SubscriptionPayload> {
+  const userId = account.id;
   const subscription = await ensureSubscription(userId);
-  const quota = quotaFrom(subscription);
-  const plan = planOf(subscription.plan);
+  const quota = quotaFrom(subscription, account);
+  // `quota.plan` already folds in the role exemption, so the limits below are the ones actually
+  // enforced by the gateway rather than the ones the stored plan would imply.
+  const plan = planOf(quota.plan);
 
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -105,7 +128,7 @@ export async function getSubscription(userId: string): Promise<SubscriptionPaylo
 
   return {
     subscription: {
-      plan: subscription.plan,
+      plan: quota.plan,
       planName: plan.name,
       status: subscription.status,
       allocation: quota.allocation,
@@ -118,7 +141,9 @@ export async function getSubscription(userId: string): Promise<SubscriptionPaylo
       createdAt: subscription.createdAt.toISOString(),
       billingConnected: subscription.externalRef !== null,
       unlimited: quota.unlimited,
-      permanent: quota.unlimited && subscription.planExpiresAt === null,
+      unlimitedByPayment: quota.unlimitedByPayment,
+      unlimitedByRole: quota.unlimitedByRole,
+      permanent: quota.unlimitedByPayment && subscription.planExpiresAt === null,
       planExpiresAt: subscription.planExpiresAt?.toISOString() ?? null,
     },
     unlimitedOffer: {

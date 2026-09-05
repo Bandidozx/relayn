@@ -22,6 +22,13 @@
  * chain-verified transfer (`src/server/services/crypto-payment-service.ts`). It is excluded from
  * `ADMIN_ASSIGNABLE_PLAN_ORDER`, whose schema rejects it at the validation layer, so "grant myself
  * permanent access for free" has no request shape at all.
+ *
+ * **Operators are exempt from metering, and that exemption is derived, never stored.**
+ * `roleGrantsUnlimited` reads `User.role`; `effectivePlan` folds it into the plan an account's
+ * entitlements are computed from. Nothing about it writes `Subscription.plan` or
+ * `Subscription.unlimited`, which is the whole point: the paragraph above stays true, the single
+ * write path to permanent access is still a verified payment, and demoting an admin removes the
+ * exemption on their very next request because there is no row left behind holding it open.
  */
 export type PlanId = "free" | "pro" | "business" | "enterprise" | "unlimited";
 
@@ -237,6 +244,41 @@ export function isUnlimitedPlan(value: string): boolean {
 /** True when `plan` is at least as high as `minimum`. Drives model authorisation. */
 export function planSatisfies(plan: string, minimum: string): boolean {
   return planOf(plan).order >= planOf(minimum).order;
+}
+
+/**
+ * True when holding this role exempts an account from metering.
+ *
+ * Operators run the gateway; billing them for calls against their own catalogue would mean the
+ * only accounts that can diagnose a provider are the ones paying to do it. So `admin` is exempt.
+ *
+ * The exemption lives here, in one predicate, rather than as an `=== "admin"` scattered across
+ * quota, rate-limit and model-authorisation code — a role list that drifts between those three
+ * would authorise a call and then refuse to meter it, or the reverse.
+ *
+ * This grants **entitlements**, not the `unlimited` column. See the module docblock: no caller of
+ * this function writes anything.
+ */
+export function roleGrantsUnlimited(role: string): boolean {
+  return role === "admin";
+}
+
+/**
+ * The plan an account's entitlements are computed from: what it bought, unless its role outranks
+ * that.
+ *
+ * Every gate that asks "may this account do X" — the quota check, `minPlan` model authorisation,
+ * the requests-per-minute ceiling, the API-key cap — reads this rather than `Subscription.plan`,
+ * so an exempt operator is uncapped consistently instead of being handed unlimited tokens and then
+ * refused a second API key by the Free cap.
+ *
+ * `Subscription.plan` itself is never rewritten. It records what the account actually holds, which
+ * is what the admin user list, the audit trail and every receipt must keep showing; the difference
+ * between the two is exactly the exemption, and collapsing it would lose that.
+ */
+export function effectivePlan(plan: string, role: string): PlanId {
+  if (roleGrantsUnlimited(role)) return UNLIMITED_PLAN_ID;
+  return isPlanId(plan) ? plan : "free";
 }
 
 /**

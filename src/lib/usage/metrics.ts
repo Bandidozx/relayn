@@ -11,7 +11,12 @@
  */
 import "server-only";
 import { prisma } from "@/lib/db";
-import { getRequestSubscription, quotaFrom, type QuotaStatus } from "@/lib/usage/accounting";
+import {
+  getRequestSubscription,
+  quotaFrom,
+  type AccountRef,
+  type QuotaStatus,
+} from "@/lib/usage/accounting";
 import {
   DEFAULT_TREND_WINDOW,
   MAX_TREND_WINDOW,
@@ -225,7 +230,8 @@ function foldWindow(allDays: DayAccumulator[], days: TrendWindow): WindowMetrics
   };
 }
 
-async function collect(userId: string) {
+async function collect(account: AccountRef) {
+  const userId = account.id;
   const subscription = await getRequestSubscription(userId);
   const windowStart = new Date(
     startOfToday().getTime() - (MAX_TREND_WINDOW - 1) * 86_400_000,
@@ -312,7 +318,7 @@ async function collect(userId: string) {
     }
   }
 
-  const quota = quotaFrom(subscription);
+  const quota = quotaFrom(subscription, account);
 
   // ── runway projection from the trailing 7 days that actually have traffic ───
   const trailing = allDays.slice(-7);
@@ -377,8 +383,8 @@ async function collect(userId: string) {
  * Every window at once, for the dashboard page. The range switcher then reslices this on
  * the client instead of navigating, so changing the range costs no server work at all.
  */
-export async function getDashboardOverview(userId: string): Promise<DashboardOverview> {
-  const base = await collect(userId);
+export async function getDashboardOverview(account: AccountRef): Promise<DashboardOverview> {
+  const base = await collect(account);
 
   return {
     cards: base.cards,
@@ -398,11 +404,11 @@ export async function getDashboardOverview(userId: string): Promise<DashboardOve
  * predates the client-side switcher and is unchanged.
  */
 export async function getOverview(
-  userId: string,
+  account: AccountRef,
   days: number = DEFAULT_TREND_WINDOW,
 ): Promise<OverviewPayload> {
   const window: TrendWindow = isTrendWindow(days) ? days : DEFAULT_TREND_WINDOW;
-  const base = await collect(userId);
+  const base = await collect(account);
   const folded = foldWindow(base.allDays, window);
 
   return {

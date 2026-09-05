@@ -38,9 +38,15 @@ export default async function DashboardPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const overview = await getDashboardOverview(session.user.id);
+  const overview = await getDashboardOverview(session.user);
   const { cards, quota, runway, recent } = overview;
   const plan = planOf(quota.plan);
+  /*
+   * Uncapped by role, with no purchase behind it. Every "one-time payment", "permanent" and "no
+   * renewal" string below is a receipt, and an operator who never paid must not be shown one — the
+   * exemption is real but it ends with the role, so the copy has to say that instead.
+   */
+  const byRoleOnly = quota.unlimitedByRole && !quota.unlimitedByPayment;
 
   return (
     <TrendWindowProvider windows={overview.windows} defaultWindow={overview.defaultWindow}>
@@ -58,7 +64,11 @@ export default async function DashboardPage() {
             label="Token access"
             value="Unlimited"
             tone="brand"
-            hint={`${plan.name} · permanent, no renewal · ${formatCompact(quota.used)} used all-time`}
+            hint={
+              byRoleOnly
+                ? `Admin role · not metered · ${formatCompact(quota.used)} used all-time`
+                : `${plan.name} · permanent, no renewal · ${formatCompact(quota.used)} used all-time`
+            }
           />
         ) : (
           <StatCard
@@ -144,8 +154,9 @@ export default async function DashboardPage() {
                     </Badge>
                   </div>
                   <p className="text-xs leading-relaxed text-ink-muted">
-                    Your access is permanent and uncapped, so there is nothing to run out of.
-                    This is your recent consumption rate for reference only.
+                    {byRoleOnly
+                      ? "Your admin role exempts this account from the token ceiling, so there is nothing to run out of. This is your recent consumption rate for reference only."
+                      : "Your access is permanent and uncapped, so there is nothing to run out of. This is your recent consumption rate for reference only."}
                   </p>
                 </>
               ) : (
@@ -200,8 +211,9 @@ export default async function DashboardPage() {
                     </span>
                   </div>
                   <p className="text-xs leading-relaxed text-ink-muted">
-                    One-time payment, permanent access. Every model in the catalogue is
-                    available and there is no monthly allocation to reset.
+                    {byRoleOnly
+                      ? "Administrators are not metered. Every model in the catalogue is available and there is no allocation to reset — for as long as the account holds the role."
+                      : "One-time payment, permanent access. Every model in the catalogue is available and there is no monthly allocation to reset."}
                   </p>
                 </>
               ) : (

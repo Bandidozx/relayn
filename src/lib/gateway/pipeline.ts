@@ -6,11 +6,16 @@
  *
  * Each step returns a stable error code so SDK users can branch on it, and every
  * rejection that indicates abuse or exhaustion is recorded (audit log / usage log).
+ *
+ * The three plan-sensitive steps — allocation, model authorisation, rate limit — all read
+ * `GatewayIdentity.plan`, which folds in the operator exemption once at `authenticate`. None of
+ * them reads `subscription.plan` directly, so they cannot come to different conclusions about the
+ * same caller.
  */
 import "server-only";
 import { prisma } from "@/lib/db";
 import { MAX_FALLBACKS, splitFallbacks } from "@/lib/catalogue";
-import { planSatisfies, planOf } from "@/lib/plans";
+import { planSatisfies, planOf, effectivePlan, type PlanId } from "@/lib/plans";
 import { resolveProvider } from "@/lib/providers/registry";
 import { sha256 } from "@/lib/security/tokens";
 import { gatewayRateLimit, type RateLimitResult } from "@/lib/security/rate-limit";
@@ -46,6 +51,16 @@ export interface GatewayIdentity {
   user: User;
   apiKey: ApiKey;
   subscription: Subscription;
+  /**
+   * The plan every gate in this pipeline authorises against: `subscription.plan`, unless
+   * `user.role` outranks it.
+   *
+   * Resolved once here, from the same freshly-read `users` row the key lookup already returned, so
+   * the quota check, `minPlan` authorisation and the rate-limit window cannot disagree about what
+   * the caller is entitled to. `subscription.plan` stays available on `subscription` for anything
+   * that needs what the account actually bought.
+   */
+  plan: PlanId;
 }
 
 /** Extracts the credential from either dialect: OpenAI Bearer or Anthropic x-api-key. */
@@ -114,12 +129,19 @@ export async function authenticate(request: Request): Promise<GatewayIdentity> {
     );
   }
 
-  return { user: apiKey.user, apiKey, subscription };
+  return {
+    user: apiKey.user,
+    apiKey,
+    subscription,
+    plan: effectivePlan(subscription.plan, apiKey.user.role),
+  };
 }
 
 /** Step 5. Allocation check, evaluated before the upstream call is made. */
-export function assertQuota(subscription: Subscription): void {
-  const quota = quotaFrom(subscription);
+export function assertQuota(identity: GatewayIdentity): void {
+  // The identity, not the bare subscription: the exemption lives on `user.role`, and a signature
+  // that took only the row could not see it.
+  const quota = quotaFrom(identity.subscription, identity.user);
   if (quota.exhausted) {
     throw new GatewayError(
       402,
@@ -278,7 +300,7 @@ export async function resolveChain(modelId: string, plan: string): Promise<Resol
 
 /** Step 2 (transport-level). Per-key and per-account fixed windows, sized by plan. */
 export function assertRateLimit(identity: GatewayIdentity): RateLimitResult {
-  const perMinute = planOf(identity.subscription.plan).requestsPerMinute;
+  const perMinute = planOf(identity.plan).requestsPerMinute;
   const result = gatewayRateLimit(identity.user.id, identity.apiKey.id, perMinute);
   if (!result.allowed) {
     throw new GatewayError(

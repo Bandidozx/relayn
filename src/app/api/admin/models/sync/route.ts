@@ -23,10 +23,10 @@ export const POST = apiRoute(async (request) => {
     }
   }
 
-  const { models, summary } = await syncAdminModels(
+  const { models, removed, summary } = await syncAdminModels(
     { id: user.id, email: user.email },
     parsed.providers,
     request,
   );
-  return ok({ models, summary });
+  return ok({ models, removed, summary });
 });

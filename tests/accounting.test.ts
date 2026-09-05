@@ -5,6 +5,11 @@
  * accumulating those directly drifts. The estimator is only a fallback for responses that
  * carry no usage block, so what is asserted is monotonicity and non-zero output, not
  * agreement with any particular BPE tokeniser.
+ *
+ * `quotaFrom` reads a role as well as a row, so every call below names one. Two independent things
+ * can leave an account uncapped — a verified payment (the `unlimited` column) and the admin role —
+ * and they are asserted separately rather than only through `unlimited`, because only the first of
+ * them may ever be described back to the account holder as a purchase.
  */
 import { describe, expect, it } from "vitest";
 import { UNLIMITED_PLAN_ID, UNLIMITED_TOKEN_ALLOCATION } from "@/lib/plans";
@@ -44,6 +49,17 @@ function unlimitedSubscription(over: Partial<Subscription> = {}): Subscription {
     ...over,
   });
 }
+
+/**
+ * The two roles, passed explicitly at every `quotaFrom` call below.
+ *
+ * `quotaFrom`'s second argument is required rather than optional for exactly this reason: an
+ * optional one would let a test — or a service — keep compiling while silently gaining or losing
+ * the operator exemption. Naming the role at each call site makes every assertion say which of the
+ * two sources it is about. `MEMBER` is the only one that leaves the stored row in charge.
+ */
+const MEMBER = { role: "user" };
+const ADMIN = { role: "admin" };
 
 describe("costMicroUsd", () => {
   it("prices input and output at their separate rates", () => {
@@ -169,33 +185,33 @@ describe("estimatePromptTokens", () => {
 
 describe("quotaFrom", () => {
   it("derives remaining and percent from the stored counters", () => {
-    const quota = quotaFrom(subscription({ tokensUsed: 62_500 }));
+    const quota = quotaFrom(subscription({ tokensUsed: 62_500 }), MEMBER);
     expect(quota.remaining).toBe(187_500);
     expect(quota.percentUsed).toBe(25);
     expect(quota.exhausted).toBe(false);
   });
 
   it("reports exhaustion once the allocation is spent", () => {
-    const quota = quotaFrom(subscription({ tokensUsed: 250_000 }));
+    const quota = quotaFrom(subscription({ tokensUsed: 250_000 }), MEMBER);
     expect(quota.remaining).toBe(0);
     expect(quota.percentUsed).toBe(100);
     expect(quota.exhausted).toBe(true);
   });
 
   it("clamps an overspend rather than reporting negative tokens", () => {
-    const quota = quotaFrom(subscription({ tokensUsed: 400_000 }));
+    const quota = quotaFrom(subscription({ tokensUsed: 400_000 }), MEMBER);
     expect(quota.remaining).toBe(0);
     expect(quota.percentUsed).toBe(100);
   });
 
   it("treats a zero allocation as fully used instead of dividing by zero", () => {
-    const quota = quotaFrom(subscription({ tokenAllocation: 0, tokensUsed: 0 }));
+    const quota = quotaFrom(subscription({ tokenAllocation: 0, tokensUsed: 0 }), MEMBER);
     expect(quota.percentUsed).toBe(100);
     expect(quota.exhausted).toBe(true);
   });
 
   it("ignores nonsensical negative counters", () => {
-    const quota = quotaFrom(subscription({ tokenAllocation: -1, tokensUsed: -5 }));
+    const quota = quotaFrom(subscription({ tokenAllocation: -1, tokensUsed: -5 }), MEMBER);
     expect(quota.allocation).toBe(0);
     expect(quota.used).toBe(0);
   });
@@ -203,7 +219,7 @@ describe("quotaFrom", () => {
 
 describe("quotaFrom on a permanently unlimited subscription", () => {
   it("reports no ceiling and never reports exhaustion", () => {
-    const quota = quotaFrom(unlimitedSubscription({ tokensUsed: 4_000_000 }));
+    const quota = quotaFrom(unlimitedSubscription({ tokensUsed: 4_000_000 }), MEMBER);
     expect(quota.unlimited).toBe(true);
     expect(quota.exhausted).toBe(false);
     expect(quota.percentUsed).toBe(0);
@@ -215,6 +231,7 @@ describe("quotaFrom on a permanently unlimited subscription", () => {
     // exactly the moment the purchase promised it never would be.
     const quota = quotaFrom(
       unlimitedSubscription({ tokensUsed: UNLIMITED_TOKEN_ALLOCATION + 1_000_000 }),
+      MEMBER,
     );
     expect(quota.remaining).toBe(0);
     expect(quota.exhausted).toBe(false);
@@ -222,7 +239,7 @@ describe("quotaFrom on a permanently unlimited subscription", () => {
   });
 
   it("keeps every field finite so the RSC boundary cannot turn one into null", () => {
-    const quota = quotaFrom(unlimitedSubscription({ tokensUsed: 1 }));
+    const quota = quotaFrom(unlimitedSubscription({ tokensUsed: 1 }), MEMBER);
     for (const value of [quota.allocation, quota.used, quota.remaining, quota.percentUsed]) {
       expect(Number.isFinite(value)).toBe(true);
     }
@@ -230,22 +247,94 @@ describe("quotaFrom on a permanently unlimited subscription", () => {
 
   it("reads the column, not the plan string", () => {
     // An account whose plan was renamed by hand must not become unlimited, and a row carrying
-    // the flag must not lose it because its plan string is something else.
-    expect(quotaFrom(subscription({ plan: UNLIMITED_PLAN_ID })).unlimited).toBe(false);
-    expect(quotaFrom(subscription({ plan: "free", unlimited: true })).unlimited).toBe(true);
+    // the flag must not lose it because its plan string is something else. Both cases are asserted
+    // as a `user`, so the role exemption cannot be what is answering.
+    expect(quotaFrom(subscription({ plan: UNLIMITED_PLAN_ID }), MEMBER).unlimited).toBe(false);
+    expect(quotaFrom(subscription({ plan: "free", unlimited: true }), MEMBER).unlimited).toBe(true);
   });
 
   it("does not treat a truthy non-boolean as unlimited", () => {
     // `subscription.unlimited === true` is a strict comparison on purpose; a legacy row that
     // somehow holds 1 instead of true must not silently grant permanent access.
-    const quota = quotaFrom(subscription({ unlimited: 1 as unknown as boolean }));
+    const quota = quotaFrom(subscription({ unlimited: 1 as unknown as boolean }), MEMBER);
     expect(quota.unlimited).toBe(false);
+  });
+});
+
+describe("quotaFrom for an operator", () => {
+  it("grants unlimited from the role alone, with the stored row untouched", () => {
+    const row = subscription({ tokensUsed: 100_000 });
+    const quota = quotaFrom(row, ADMIN);
+    expect(quota.unlimited).toBe(true);
+    expect(quota.unlimitedByRole).toBe(true);
+    expect(quota.unlimitedByPayment).toBe(false);
+    expect(quota.exhausted).toBe(false);
+    expect(quota.percentUsed).toBe(0);
+    // Nothing was written. The row still says free, metered and not unlimited — which is what makes
+    // losing the role restore metering on the very next request, with nothing left to clean up.
+    expect(row.plan).toBe("free");
+    expect(row.unlimited).toBe(false);
+    expect(row.tokenAllocation).toBe(250_000);
+  });
+
+  it("meters the same row for a member", () => {
+    // One row, two roles, two answers, no mutation in between: the exemption is a property of the
+    // caller, not of the subscription.
+    const row = subscription({ tokensUsed: 400_000 });
+    expect(quotaFrom(row, MEMBER).exhausted).toBe(true);
+    expect(quotaFrom(row, MEMBER).unlimited).toBe(false);
+    expect(quotaFrom(row, ADMIN).exhausted).toBe(false);
+  });
+
+  it("keeps an operator uncapped past a spent allocation", () => {
+    const quota = quotaFrom(subscription({ tokensUsed: 900_000 }), ADMIN);
+    // `remaining` still reports the arithmetic honestly; `exhausted` is the gate, and it is open.
+    expect(quota.remaining).toBe(0);
+    expect(quota.exhausted).toBe(false);
+    expect(quota.used).toBe(900_000);
+  });
+
+  it("reports the two sources independently so receipt copy can key on the payment", () => {
+    const byRole = quotaFrom(subscription(), ADMIN);
+    expect([byRole.unlimitedByRole, byRole.unlimitedByPayment]).toEqual([true, false]);
+
+    const byPayment = quotaFrom(unlimitedSubscription(), MEMBER);
+    expect([byPayment.unlimitedByRole, byPayment.unlimitedByPayment]).toEqual([false, true]);
+
+    // An operator who also paid. The payment is the more durable of the two facts — it is what
+    // survives the role being handed over — so the exemption must not mask it.
+    const both = quotaFrom(unlimitedSubscription(), ADMIN);
+    expect([both.unlimitedByRole, both.unlimitedByPayment]).toEqual([true, true]);
+
+    const neither = quotaFrom(subscription(), MEMBER);
+    expect([neither.unlimitedByRole, neither.unlimitedByPayment]).toEqual([false, false]);
+    expect(neither.unlimited).toBe(false);
+  });
+
+  it("reports the effective plan, which is the one the gateway enforces", () => {
+    expect(quotaFrom(subscription({ plan: "free" }), ADMIN).plan).toBe(UNLIMITED_PLAN_ID);
+    expect(quotaFrom(subscription({ plan: "free" }), MEMBER).plan).toBe("free");
+    // An operator-assigned tier is reported as stored for a member, and still lifted for an admin.
+    expect(quotaFrom(subscription({ plan: "business" }), MEMBER).plan).toBe("business");
+    expect(quotaFrom(subscription({ plan: "business" }), ADMIN).plan).toBe(UNLIMITED_PLAN_ID);
+  });
+
+  it("describes an operator like any uncapped account, with no bar and no renewal", () => {
+    // `describeQuota` branches on `quota.unlimited` alone, so it never has to learn about roles.
+    const display = describeQuota(quotaFrom(subscription({ tokensUsed: 7_000 }), ADMIN));
+    expect(display.unlimited).toBe(true);
+    expect(display.primary).toBe("Unlimited");
+    expect(display.percent).toBe(null);
+    expect(display.renewalLabel).toBe(null);
+    expect(display.exhausted).toBe(false);
   });
 });
 
 describe("describeQuota", () => {
   it("describes an unlimited account with no bar and no renewal", () => {
-    const display = describeQuota(quotaFrom(unlimitedSubscription({ tokensUsed: 12_345_678 })));
+    const display = describeQuota(
+      quotaFrom(unlimitedSubscription({ tokensUsed: 12_345_678 }), MEMBER),
+    );
     expect(display).toEqual({
       unlimited: true,
       primary: "Unlimited",
@@ -258,14 +347,14 @@ describe("describeQuota", () => {
   });
 
   it("never prints the 2B sentinel as if it were a budget", () => {
-    const display = describeQuota(quotaFrom(unlimitedSubscription({ tokensUsed: 5 })));
+    const display = describeQuota(quotaFrom(unlimitedSubscription({ tokensUsed: 5 }), MEMBER));
     for (const text of [display.primary, display.secondary]) {
       expect(text).not.toMatch(/2(\.0)?B/);
     }
   });
 
   it("describes a metered account with a percentage and a reset label", () => {
-    const display = describeQuota(quotaFrom(subscription({ tokensUsed: 125_000 })));
+    const display = describeQuota(quotaFrom(subscription({ tokensUsed: 125_000 }), MEMBER));
     expect(display.unlimited).toBe(false);
     expect(display.primary).toBe("125K");
     expect(display.secondary).toBe("of 250K left");
@@ -275,8 +364,10 @@ describe("describeQuota", () => {
   });
 
   it("warns past 85% but not once the allocation is spent", () => {
-    expect(describeQuota(quotaFrom(subscription({ tokensUsed: 220_000 }))).warning).toBe(true);
-    const spent = describeQuota(quotaFrom(subscription({ tokensUsed: 250_000 })));
+    expect(describeQuota(quotaFrom(subscription({ tokensUsed: 220_000 }), MEMBER)).warning).toBe(
+      true,
+    );
+    const spent = describeQuota(quotaFrom(subscription({ tokensUsed: 250_000 }), MEMBER));
     expect(spent.warning).toBe(false);
     expect(spent.exhausted).toBe(true);
     expect(spent.percent).toBe(100);

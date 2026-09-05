@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Integrations" };
 export default async function IntegrationsPage() {
   const { user } = await requireUser();
   const [catalogue, keys, integrations] = await Promise.all([
-    listModelsForUser(user.id),
+    listModelsForUser(user),
     listApiKeys(user.id),
     listIntegrations(user.id),
   ]);

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { KeysManager } from "@/components/keys/keys-manager";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/guards";
-import { planOf } from "@/lib/plans";
+import { effectivePlan, planOf } from "@/lib/plans";
 import { getRequestSubscription } from "@/lib/usage/accounting";
 import { listApiKeys } from "@/server/services/keys-service";
 
@@ -15,7 +15,13 @@ export default async function ApiKeysPage() {
     listApiKeys(user.id),
     getRequestSubscription(user.id),
   ]);
-  const plan = planOf(subscription.plan);
+  /*
+   * The effective plan, because `maxApiKeys` from this row is what disables the create button and
+   * writes the "1 of 1 active key" caption. `createApiKey` counts against the same effective plan,
+   * so reading the stored one here would grey out a button the API would have accepted — the exact
+   * shape of a control that lies about what the server will do.
+   */
+  const plan = planOf(effectivePlan(subscription.plan, user.role));
 
   return (
     <>

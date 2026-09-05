@@ -447,7 +447,8 @@ async function main() {
   });
   sub = await ensureSubscription(alice.id);
   check("usage is still metered for the record", sub.tokensUsed === 7_501_500, `used ${sub.tokensUsed}`);
-  let quota = quotaFrom(sub);
+  // `alice` is a plain `user`: the payment is the only thing that can make this unlimited.
+  let quota = quotaFrom(sub, alice);
   check("quotaFrom reports unlimited", quota.unlimited === true);
   check("and never reports exhaustion", quota.exhausted === false);
   const display = describeQuota(quota);
@@ -462,7 +463,7 @@ async function main() {
     // Past the sentinel allocation, which is where a naive `remaining <= 0` would lock the account.
     data: { tokensUsed: UNLIMITED_TOKEN_ALLOCATION + 1 },
   });
-  quota = quotaFrom(await ensureSubscription(alice.id));
+  quota = quotaFrom(await ensureSubscription(alice.id), alice);
   check("still not exhausted beyond the sentinel allocation", quota.exhausted === false);
 
   const models = await prisma.aiModel.findMany({ select: { modelId: true, minPlan: true } });
@@ -638,7 +639,7 @@ async function main() {
   const helen = await makeUser("helen");
   const helenSub = await ensureSubscription(helen.id);
   check("a fresh account is Free", helenSub.plan === "free" && helenSub.unlimited === false);
-  check("with a finite quota", quotaFrom(helenSub).unlimited === false);
+  check("with a finite quota", quotaFrom(helenSub, helen).unlimited === false);
   check("and no crypto payment of its own", (await latestCryptoPaymentForUser(helen.id)) === null);
   for (const [name, id] of [
     ["the losing racer", other.id],

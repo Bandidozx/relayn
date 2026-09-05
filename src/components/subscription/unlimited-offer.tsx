@@ -153,8 +153,14 @@ export function UnlimitedOfferCard({
     }
   }
 
-  // ---- already paid ------------------------------------------------------------------
-  if (subscription.unlimited) {
+  /*
+   * ---- already paid ------------------------------------------------------------------
+   *
+   * `unlimitedByPayment`, not `unlimited` — same reason as the on-chain card. Every row below is a
+   * receipt (a rupiah amount, an order id, a payment method), and an administrator exempt by role
+   * has none of those. They fall through to the offer instead.
+   */
+  if (subscription.unlimitedByPayment) {
     const receipt = payment && payment.status === "paid" ? payment : null;
     const rows: Array<[string, string]> = [
       ["Payment", `${formatIdr(plan.priceIdr ?? offer.priceIdr)} one-time`],
@@ -268,7 +274,10 @@ export function UnlimitedOfferCard({
               <p className="font-medium text-amber">Payments are not enabled on this deployment.</p>
               <p className="mt-1">
                 The operator must configure the QRIS provider credentials before this button can do
-                anything. Until then this account stays on {subscription.planName}.
+                anything.{" "}
+                {subscription.unlimitedByRole
+                  ? "This account is not metered while it holds the admin role, so nothing is blocked in the meantime."
+                  : `Until then this account stays on ${subscription.planName}.`}
               </p>
             </div>
           )}

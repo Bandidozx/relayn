@@ -7,6 +7,11 @@
  * list the operator schema is built from, and `PUBLIC_PLAN_ORDER` must stay down to the two plans
  * a user can actually reach, because those two facts are what make "grant myself a better tier for
  * free" have no request shape at all.
+ *
+ * `roleGrantsUnlimited` / `effectivePlan` are the operator exemption, and they are asserted here
+ * for the same reason: they are pure functions of a role string and a stored plan string, they
+ * write nothing, and the only role they recognise is the one `requireAdmin` recognises. If those
+ * stop being true, an exemption starts outliving the role that granted it.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -17,11 +22,13 @@ import {
   UNLIMITED_PLAN_ID,
   UNLIMITED_PRICE_IDR,
   UNLIMITED_TOKEN_ALLOCATION,
+  effectivePlan,
   isPlanId,
   isUnlimitedPlan,
   nextRenewalDate,
   planOf,
   planSatisfies,
+  roleGrantsUnlimited,
 } from "@/lib/plans";
 
 /** Every plan that is metered by a monthly allocation, in ascending order. */
@@ -175,6 +182,52 @@ describe("planSatisfies", () => {
     expect(planSatisfies("god-mode", "pro")).toBe(false);
     expect(planSatisfies("god-mode", "free")).toBe(true);
     expect(planSatisfies("god-mode", "unlimited")).toBe(false);
+  });
+});
+
+describe("roleGrantsUnlimited", () => {
+  it("recognises exactly one role", () => {
+    expect(roleGrantsUnlimited("admin")).toBe(true);
+    for (const role of ["user", "member", "owner", "staff", "moderator", ""]) {
+      expect(roleGrantsUnlimited(role)).toBe(false);
+    }
+  });
+
+  it("matches the string the admin guard matches, character for character", () => {
+    // `requireAdmin` compares `user.role !== "admin"`, so anything this predicate accepted that the
+    // guard did not would hand out uncapped tokens to an account that cannot reach /admin — an
+    // exemption nobody granted. Case and whitespace included.
+    for (const near of ["Admin", "ADMIN", "admin ", " admin", "administrator", "admins"]) {
+      expect(roleGrantsUnlimited(near)).toBe(false);
+    }
+  });
+});
+
+describe("effectivePlan", () => {
+  it("lifts an operator to unlimited whatever their row says", () => {
+    for (const stored of [...PLAN_ORDER, "nonsense", ""]) {
+      expect(effectivePlan(stored, "admin")).toBe(UNLIMITED_PLAN_ID);
+    }
+  });
+
+  it("returns the stored plan untouched for everyone else", () => {
+    for (const stored of PLAN_ORDER) expect(effectivePlan(stored, "user")).toBe(stored);
+  });
+
+  it("falls back to Free for an unrecognised stored plan, not to unlimited", () => {
+    // Same failure mode as `planSatisfies`: an unknown string must lose entitlements, not gain them.
+    for (const bad of ["god-mode", "", "FREE", "unlimited "]) {
+      expect(effectivePlan(bad, "user")).toBe("free");
+    }
+  });
+
+  it("is a pure read — it returns a plan id and cannot write one", () => {
+    // The whole design of the exemption: derived per request from `User.role`, never persisted. A
+    // caller holds the result for the length of one render, so demotion takes effect immediately.
+    const before = effectivePlan("free", "admin");
+    expect(before).toBe(UNLIMITED_PLAN_ID);
+    expect(effectivePlan("free", "user")).toBe("free");
+    expect(isPlanId(before)).toBe(true);
   });
 });
 

@@ -1,16 +1,19 @@
 /**
- * Hand-added catalogue rows — the write path sync does not have.
+ * Hand-added catalogue rows and catalogue deletion — the two write paths sync does not have.
  *
- * Three refusals carry the weight here, and all three exist because the failure they prevent is
- * silent rather than loud:
+ * The refusals carry the weight here, and each exists because the failure it prevents is silent
+ * rather than loud:
  *
  *   - **A dead id is refused before it is written.** The probe asks the upstream to serve one
  *     token; an id that fails it would otherwise become a 502 for a paying caller later, long
  *     after whoever typed it stopped looking.
- *   - **A synced row cannot be deleted.** The next sync would recreate it, so the delete would
- *     appear to work and then quietly undo itself. Those are disabled instead.
  *   - **A row another chain still names cannot be deleted.** The gateway would skip the gap and
  *     report nothing, leaving a fallback that looks configured and does nothing.
+ *
+ * Deletion itself is asserted from the other direction: a **synced** row must leave a suppression
+ * behind, written in the same transaction, or the next sync lists the upstream, does not recognise
+ * the id, and recreates the row — a delete that silently undoes itself. A **manual** row must leave
+ * none, because sync never created it and never will.
  *
  * Prices default to zero rather than to a guess, which is asserted: a guessed price is billed to
  * real users.
@@ -25,6 +28,12 @@ const db = vi.hoisted(() => ({
   create: vi.fn(),
   destroy: vi.fn(),
   groupBy: vi.fn(),
+  removedFindMany: vi.fn(),
+  removedFindUnique: vi.fn(),
+  removedUpsert: vi.fn(),
+  removedDestroy: vi.fn(),
+  removedDeleteMany: vi.fn(),
+  transaction: vi.fn(),
 }));
 const { resolveProvider, recordAudit } = vi.hoisted(() => ({
   resolveProvider: vi.fn(),
@@ -40,8 +49,16 @@ vi.mock("@/lib/db", () => ({
       delete: db.destroy,
       groupBy: vi.fn(async () => []),
     },
+    removedModel: {
+      findMany: db.removedFindMany,
+      findUnique: db.removedFindUnique,
+      upsert: db.removedUpsert,
+      delete: db.removedDestroy,
+      deleteMany: db.removedDeleteMany,
+    },
     usageLog: { groupBy: db.groupBy },
     providerConfig: { findMany: vi.fn(async () => []), findUnique: vi.fn(async () => null) },
+    $transaction: db.transaction,
   },
 }));
 vi.mock("@/lib/audit", () => ({ recordAudit }));
@@ -97,12 +114,34 @@ function provider(overrides: { configured?: boolean; answer?: string; fail?: str
   } as unknown as ModelProvider;
 }
 
+/** A suppression row: the id of a synced model an operator deleted. */
+function removedRow(overrides: Partial<{ id: string; modelId: string; provider: string; name: string }> = {}) {
+  return {
+    id: "gone-1",
+    modelId: "acme/one",
+    provider: "acme",
+    name: "One",
+    removedBy: "admin-1",
+    createdAt: new Date("2026-09-05T10:00:00Z"),
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   db.findUnique.mockReset().mockResolvedValue(null);
   db.findMany.mockReset().mockResolvedValue([]);
   db.create.mockReset().mockResolvedValue(row());
   db.destroy.mockReset().mockResolvedValue(row());
   db.groupBy.mockReset().mockResolvedValue([]);
+  db.removedFindMany.mockReset().mockResolvedValue([]);
+  db.removedFindUnique.mockReset().mockResolvedValue(null);
+  db.removedUpsert.mockReset().mockResolvedValue(removedRow());
+  db.removedDestroy.mockReset().mockResolvedValue(removedRow());
+  db.removedDeleteMany.mockReset().mockResolvedValue({ count: 0 });
+  // Stands in for the real transaction by awaiting the operations it was handed. Enough to assert
+  // *what* is enrolled, which is the property that matters: the delete and the suppression must
+  // both be in the same call.
+  db.transaction.mockReset().mockImplementation(async (ops: unknown[]) => Promise.all(ops));
   recordAudit.mockReset().mockResolvedValue(undefined);
   resolveProvider.mockReset().mockResolvedValue(provider());
 });
@@ -125,6 +164,14 @@ describe("createManualModel", () => {
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "admin.model_created", targetId: "acme/one" }),
     );
+  });
+
+  it("clears a suppression for the id it writes", async () => {
+    // Adding an id back by hand is a clearer statement of intent than the earlier deletion. Leaving
+    // the suppression would list the same model as live and as removed at the same time.
+    await service.createManualModel(ACTOR, input, REQUEST);
+
+    expect(db.removedDeleteMany).toHaveBeenCalledWith({ where: { modelId: "acme/one" } });
   });
 
   it("records an unknown price as zero rather than guessing one", async () => {
@@ -246,11 +293,11 @@ describe("createManualModel", () => {
   });
 });
 
-describe("deleteManualModel", () => {
+describe("deleteCatalogueModel", () => {
   it("deletes a hand-added row and audits the catalogue id, not the row id", async () => {
     db.findUnique.mockResolvedValue(row({ id: "row-1", modelId: "acme/one", manual: true }));
 
-    await service.deleteManualModel(ACTOR, "row-1", REQUEST);
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
 
     expect(db.destroy).toHaveBeenCalledWith({ where: { id: "row-1" } });
     expect(recordAudit).toHaveBeenCalledWith(
@@ -258,30 +305,72 @@ describe("deleteManualModel", () => {
     );
   });
 
-  it("refuses a synced row, because the next sync would recreate it", async () => {
-    // The delete would appear to work and then quietly undo itself. Disabling is the real remedy,
-    // so the message says so.
+  it("leaves no suppression for a hand-added row", async () => {
+    // Sync never created it and never will, so there is nothing to suppress. An entry here would
+    // show the model as both live-by-hand and removed if it were ever re-added.
+    db.findUnique.mockResolvedValue(row({ manual: true }));
+
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
+
+    expect(db.removedUpsert).not.toHaveBeenCalled();
+    expect(recordAudit.mock.calls[0]![0].metadata).toMatchObject({
+      manual: true,
+      suppressed: false,
+    });
+  });
+
+  it("suppresses a synced id so the next sync cannot recreate it", async () => {
+    db.findUnique.mockResolvedValue(row({ modelId: "acme/one", provider: "acme", manual: false }));
+
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
+
+    expect(db.destroy).toHaveBeenCalledWith({ where: { id: "row-1" } });
+    expect(db.removedUpsert).toHaveBeenCalledTimes(1);
+    // The catalogue id, not the row handle: sync matches on `modelId`, and a row handle would
+    // suppress nothing while looking like it had.
+    expect(db.removedUpsert.mock.calls[0]![0]).toMatchObject({
+      where: { modelId: "acme/one" },
+      create: { modelId: "acme/one", provider: "acme", removedBy: "admin-1" },
+    });
+    expect(recordAudit.mock.calls[0]![0].metadata).toMatchObject({
+      manual: false,
+      suppressed: true,
+    });
+  });
+
+  it("enrols the delete and the suppression in one transaction", async () => {
+    // Separate writes would let the delete commit alone, and the next sync would undo it.
     db.findUnique.mockResolvedValue(row({ manual: false }));
 
-    await expect(service.deleteManualModel(ACTOR, "row-1", REQUEST)).rejects.toThrow(
-      /came from catalogue sync and would be recreated by the next run\. Disable it instead\./,
-    );
-    expect(db.destroy).not.toHaveBeenCalled();
-    expect(recordAudit).not.toHaveBeenCalled();
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(db.transaction.mock.calls[0]![0]).toHaveLength(2);
+  });
+
+  it("re-suppresses an id that was restored before, rather than failing on the unique index", async () => {
+    // `removed_models.modelId` is unique, so a second delete of the same id must update the
+    // existing row. A bare create would throw and the delete would be refused for no good reason.
+    db.findUnique.mockResolvedValue(row({ manual: false }));
+
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
+
+    expect(db.removedUpsert.mock.calls[0]![0].update).toMatchObject({ removedBy: "admin-1" });
   });
 
   it("refuses a row another model still falls back to, and names the chains", async () => {
     db.findUnique.mockResolvedValue(row({ modelId: "acme/one", manual: true }));
     db.findMany.mockResolvedValue([{ modelId: "acme/two", fallbacks: "acme/one" }]);
 
-    await expect(service.deleteManualModel(ACTOR, "row-1", REQUEST)).rejects.toMatchObject({
+    await expect(service.deleteCatalogueModel(ACTOR, "row-1", REQUEST)).rejects.toMatchObject({
       status: 403,
       code: "forbidden",
     });
-    await expect(service.deleteManualModel(ACTOR, "row-1", REQUEST)).rejects.toThrow(
+    await expect(service.deleteCatalogueModel(ACTOR, "row-1", REQUEST)).rejects.toThrow(
       /still a fallback for `acme\/two`\. Remove it from those chains first\./,
     );
     expect(db.destroy).not.toHaveBeenCalled();
+    expect(db.removedUpsert).not.toHaveBeenCalled();
   });
 
   it("is not blocked by a substring match in someone else's chain", async () => {
@@ -290,7 +379,7 @@ describe("deleteManualModel", () => {
     db.findUnique.mockResolvedValue(row({ modelId: "acme/one", manual: true }));
     db.findMany.mockResolvedValue([row({ modelId: "acme/two", fallbacks: "acme/one-mini" })]);
 
-    await service.deleteManualModel(ACTOR, "row-1", REQUEST);
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
 
     expect(db.destroy).toHaveBeenCalledTimes(1);
   });
@@ -299,7 +388,7 @@ describe("deleteManualModel", () => {
     db.findUnique.mockResolvedValue(row({ modelId: "acme/one", manual: true }));
     db.findMany.mockResolvedValue([row({ modelId: "acme/one", fallbacks: "acme/one" })]);
 
-    await service.deleteManualModel(ACTOR, "row-1", REQUEST);
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
 
     expect(db.destroy).toHaveBeenCalledTimes(1);
   });
@@ -307,7 +396,7 @@ describe("deleteManualModel", () => {
   it("404s an unknown row id instead of reporting a successful delete", async () => {
     db.findUnique.mockResolvedValue(null);
 
-    await expect(service.deleteManualModel(ACTOR, "ghost", REQUEST)).rejects.toMatchObject({
+    await expect(service.deleteCatalogueModel(ACTOR, "ghost", REQUEST)).rejects.toMatchObject({
       status: 404,
       code: "not_found",
     });
@@ -320,8 +409,42 @@ describe("deleteManualModel", () => {
     db.findUnique.mockResolvedValue(row({ modelId: "acme/one", manual: true }));
     db.groupBy.mockResolvedValue([{ modelId: "acme/one", _count: { _all: 4_000 } }]);
 
-    await service.deleteManualModel(ACTOR, "row-1", REQUEST);
+    await service.deleteCatalogueModel(ACTOR, "row-1", REQUEST);
 
     expect(db.destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("restoreRemovedModel", () => {
+  it("drops the suppression and audits the catalogue id", async () => {
+    db.removedFindUnique.mockResolvedValue(removedRow({ id: "gone-1", modelId: "acme/one" }));
+
+    await service.restoreRemovedModel(ACTOR, "gone-1", REQUEST);
+
+    expect(db.removedDestroy).toHaveBeenCalledWith({ where: { id: "gone-1" } });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "admin.model_restored", targetId: "acme/one" }),
+    );
+  });
+
+  it("does not recreate the model row", async () => {
+    // Prices and context windows belong to the upstream. Restoring a snapshot would serve numbers
+    // that were current whenever the model happened to be deleted; the next sync re-reads them.
+    db.removedFindUnique.mockResolvedValue(removedRow());
+
+    await service.restoreRemovedModel(ACTOR, "gone-1", REQUEST);
+
+    expect(db.create).not.toHaveBeenCalled();
+  });
+
+  it("404s an id that is not on the removed list", async () => {
+    db.removedFindUnique.mockResolvedValue(null);
+
+    await expect(service.restoreRemovedModel(ACTOR, "ghost", REQUEST)).rejects.toMatchObject({
+      status: 404,
+      code: "not_found",
+    });
+    expect(db.removedDestroy).not.toHaveBeenCalled();
+    expect(recordAudit).not.toHaveBeenCalled();
   });
 });

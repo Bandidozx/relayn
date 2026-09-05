@@ -64,7 +64,8 @@ const PALETTE = [
  * recomputes every ratio against the real token, so a future edit cannot quietly drop below it.
  *
  * Two vendors keep a Relayn colour despite having a real mark: Kimi and Z.ai both publish a
- * monochrome black logo, and black on a dark card is nothing at all. Marks are generated into
+ * monochrome black logo, and black on a dark card is nothing at all. Microsoft is a third case —
+ * four published colours, no primary — explained where it sits. Marks are generated into
  * `vendor-marks.ts` by `scripts/generate-vendor-marks.mjs` — see that file for sources.
  */
 const MARKED: VendorRule[] = [
@@ -138,18 +139,56 @@ const MARKED: VendorRule[] = [
     match: ["qwen", "qwq", "tongyi"],
   },
   { slug: "zai", label: "Z.ai GLM", color: PALETTE[0], initials: "GL", match: ["glm", "z-ai", "zhipu"] },
+  {
+    slug: "xai",
+    // xAI publishes its mark in black and white only, with no chromatic brand colour to borrow.
+    // White is not a guess here — it is the published reverse mark, which is exactly the variant
+    // a dark tile calls for.
+    label: "xAI Grok",
+    color: "#FFFFFF",
+    initials: "XA",
+    match: ["grok", "x-ai"],
+  },
+  {
+    // Microsoft's logo is four squares in four published colours (#F25022, #7FBA00, #00A4EF,
+    // #FFB900) with no designated primary. A tile draws one colour, so naming one of the four
+    // would assert a hierarchy the brand does not publish — hence a Relayn token beside a real
+    // logo, which the rule above explicitly allows.
+    slug: "microsoft",
+    label: "Microsoft",
+    color: PALETTE[2],
+    initials: "MS",
+    match: ["phi-", "wizardlm"],
+  },
+  {
+    // Hunyuan's artwork is a #0055E9 disc behind a cyan-and-white swirl. The disc blue manages
+    // 3.1:1 on this card, and lifting it lands on top of the four blues already in this list
+    // (Google, Meta, ByteDance, DeepSeek), so the tile wears the other large published colour
+    // from the same mark instead of a fifth near-identical blue.
+    slug: "tencent",
+    label: "Tencent Hunyuan",
+    color: "#00BCFF",
+    initials: "HY",
+    match: ["hunyuan", "tencent"],
+  },
+  {
+    // Tri-colour mark. The primary, Volcanic Green #39594D, is 2.4:1 here — unreadable — so the
+    // coral of the third ribbon carries it.
+    slug: "cohere",
+    label: "Cohere",
+    color: "#FF7759",
+    initials: "CO",
+    match: ["command-", "cohere"],
+  },
 ];
 
 /*
- * Vendors with no mark available in either source. These get a monogram in a Relayn palette
- * colour rather than a guessed brand colour — and deliberately never amber, which this page
- * already spends on the locked-model state.
+ * The one vendor with no mark, and the one that will never have one: Relayn's own mock provider is
+ * not a third party, so there is no logo to ship. A monogram in a Relayn palette colour — and
+ * deliberately never amber, which this page already spends on the locked-model state — is the end
+ * state, not a placeholder. Anything the rules above do not recognise degrades the same way.
  */
 const UNMARKED: VendorRule[] = [
-  { slug: "xai", label: "xAI Grok", color: "var(--color-ink-muted)", initials: "XA", match: ["grok", "x-ai"] },
-  { slug: "microsoft", label: "Microsoft", color: PALETTE[2], initials: "MS", match: ["phi-", "wizardlm"] },
-  { slug: "tencent", label: "Tencent Hunyuan", color: PALETTE[0], initials: "HY", match: ["hunyuan", "tencent"] },
-  { slug: "cohere", label: "Cohere", color: PALETTE[3], initials: "CO", match: ["command-", "cohere"] },
   { slug: "sandbox", label: "Relayn Sandbox", color: "var(--color-ink-faint)", initials: "RL", match: ["mock", "sandbox"] },
 ];
 

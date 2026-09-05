@@ -5,5 +5,5 @@ import { listModelsForUser } from "@/server/services/models-service";
 
 export const GET = apiRoute(async () => {
   const { user } = await requireUser();
-  return ok(await listModelsForUser(user.id));
+  return ok(await listModelsForUser(user));
 });

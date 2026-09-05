@@ -35,6 +35,14 @@ export interface ShellQuota {
   renewalDate: string;
   /** No token ceiling. The card shows lifetime usage instead of a progress bar. */
   unlimited: boolean;
+  /** Uncapped because a verified payment says so. Gates the "permanent · no renewal" claim. */
+  unlimitedByPayment: boolean;
+  /**
+   * Uncapped because of the caller's role rather than a purchase. Only the sub-label differs —
+   * "permanent · no renewal" is true of a payment, but an operator's exemption lasts exactly as
+   * long as the role does, and this card is the one place that claim is made on every page.
+   */
+  unlimitedByRole: boolean;
 }
 
 function initials(name: string, email: string): string {
@@ -90,11 +98,17 @@ function QuotaCard({ quota }: { quota: ShellQuota }) {
 
       {quota.unlimited ? (
         <>
-          <p className="mt-2 text-sm font-semibold text-brand">Unlimited Access</p>
+          <p className="mt-2 text-sm font-semibold text-brand">
+            {quota.unlimitedByPayment ? "Unlimited Access" : "Operator Access"}
+          </p>
           <p className="numeric mt-1 text-[11px] text-ink-muted">
             {formatCompact(quota.used)} tokens used all-time
           </p>
-          <p className="mt-0.5 text-[10.5px] text-ink-faint">Permanent plan · no renewal</p>
+          {/* A payment is permanent; a role is not. Saying "no renewal" of an exemption that ends
+              with the role would be the card promising something the gateway will not honour. */}
+          <p className="mt-0.5 text-[10.5px] text-ink-faint">
+            {quota.unlimitedByPayment ? "Permanent plan · no renewal" : "Admin role · not metered"}
+          </p>
         </>
       ) : (
         <>

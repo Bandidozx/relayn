@@ -54,8 +54,7 @@ export async function GET(request: Request): Promise<Response> {
       orderBy: [{ sortOrder: "asc" }, { modelId: "asc" }],
     });
 
-    const plan = identity.subscription.plan;
-    const visible = models.filter((model) => planSatisfies(plan, model.minPlan));
+    const visible = models.filter((model) => planSatisfies(identity.plan, model.minPlan));
 
     return NextResponse.json(
       {

@@ -11,8 +11,12 @@
  *
  * Rows arrive from two places. Sync pulls whatever each upstream lists; "Add model" writes one
  * by hand for a model an upstream serves but does not publish. A hand-added row is marked
- * `manual`, which is what makes it safe to delete (sync would recreate anything else) and what
- * stops the next sync from overwriting the id and prices typed here.
+ * `manual`, which stops the next sync from overwriting the id and prices typed here.
+ *
+ * Any row can be deleted, from either source. Deleting a synced one also records its id as
+ * suppressed, because sync would otherwise list the upstream again and recreate it — that list is
+ * rendered under the table so a deletion is visible and reversible rather than just a row that
+ * vanished.
  */
 import { useMemo, useState } from "react";
 import type { BadgeTone } from "@/components/ui/badge";
@@ -27,12 +31,20 @@ import { useToast } from "@/components/ui/toast";
 import { ApiClientError, api } from "@/lib/client/api";
 import { cn } from "@/lib/cn";
 import { MODEL_CATEGORIES, MAX_FALLBACKS } from "@/lib/catalogue";
-import { formatLatency, formatLimit, formatNumber, formatPricePerMillion, titleCase } from "@/lib/format";
+import {
+  formatDateTime,
+  formatLatency,
+  formatLimit,
+  formatNumber,
+  formatPricePerMillion,
+  titleCase,
+} from "@/lib/format";
 import { PLAN_ORDER, planOf } from "@/lib/plans";
 import type {
   AdminModelRow,
   AdminProviderRow,
   ModelProbeResult,
+  RemovedModelRow,
 } from "@/server/services/admin-service";
 import type { SyncSummary } from "@/server/services/model-sync-service";
 
@@ -68,15 +80,24 @@ function submitError(error: unknown, fallback: string): SubmitError {
   return { message: fallback, fields: {} };
 }
 
+/** What every catalogue mutation returns: a delete moves a row from one list to the other. */
+interface ModelsPayload {
+  models: AdminModelRow[];
+  removed: RemovedModelRow[];
+}
+
 export function AdminModels({
   initial,
+  initialRemoved = [],
   providers = [],
 }: {
   initial: AdminModelRow[];
+  initialRemoved?: RemovedModelRow[];
   providers?: AdminProviderRow[];
 }) {
   const toast = useToast();
   const [models, setModels] = useState(initial);
+  const [removed, setRemoved] = useState(initialRemoved);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [provider, setProvider] = useState("");
@@ -85,6 +106,7 @@ export function AdminModels({
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<AdminModelRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<SyncSummary | null>(null);
 
@@ -147,11 +169,12 @@ export function AdminModels({
    */
   async function create(payload: Record<string, unknown>): Promise<SubmitError | null> {
     try {
-      const next = await api.post<{ models: AdminModelRow[]; probe?: ModelProbeResult }>(
+      const next = await api.post<ModelsPayload & { probe?: ModelProbeResult }>(
         "/api/admin/models",
         payload,
       );
       setModels(next.models);
+      setRemoved(next.removed);
       setAdding(false);
       toast.success(
         "Model added",
@@ -165,16 +188,26 @@ export function AdminModels({
     }
   }
 
-  /** Only `manual` rows can be deleted — the API refuses anything sync would recreate. */
+  /**
+   * Deletes a catalogue row. A synced id is also recorded as suppressed server-side, which is the
+   * only reason deleting one sticks; the toast says which of the two happened, because "deleted"
+   * alone would not explain why the id then appears in the removed list below.
+   */
   async function remove() {
     if (!removing) return;
     const row = removing;
     setDeleting(true);
     try {
-      const next = await api.delete<{ models: AdminModelRow[] }>(`/api/admin/models/${row.id}`);
+      const next = await api.delete<ModelsPayload>(`/api/admin/models/${row.id}`);
       setModels(next.models);
+      setRemoved(next.removed);
       setRemoving(null);
-      toast.success("Model deleted", `${row.modelId} is no longer in the catalogue.`);
+      toast.success(
+        "Model deleted",
+        row.manual
+          ? `${row.modelId} is no longer in the catalogue.`
+          : `${row.modelId} is gone and will stay gone — sync will skip it from now on.`,
+      );
     } catch (error) {
       toast.error(
         "Could not delete model",
@@ -186,6 +219,27 @@ export function AdminModels({
   }
 
   /**
+   * Lifts a suppression. Does not put the row back by itself — the model returns on the next sync
+   * with the upstream's current prices, which is the only place those numbers are trustworthy.
+   */
+  async function restore(row: RemovedModelRow) {
+    setRestoringId(row.id);
+    try {
+      const next = await api.delete<ModelsPayload>(`/api/admin/models/removed/${row.id}`);
+      setModels(next.models);
+      setRemoved(next.removed);
+      toast.success("Model no longer suppressed", `Run a sync to pull ${row.modelId} back in.`);
+    } catch (error) {
+      toast.error(
+        "Could not restore model",
+        error instanceof ApiClientError ? error.message : "Please try again.",
+      );
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
+  /**
    * Pulls each configured upstream's `/models` into the catalogue. Deliberately manual: an
    * aggregator can add or drop a dozen models overnight, and an operator should be the one
    * deciding when that lands. Rows the upstream no longer lists are reported, not disabled.
@@ -193,10 +247,11 @@ export function AdminModels({
   async function runSync() {
     setSyncing(true);
     try {
-      const next = await api.post<{ models: AdminModelRow[]; summary: SyncSummary }>(
+      const next = await api.post<ModelsPayload & { summary: SyncSummary }>(
         "/api/admin/models/sync",
       );
       setModels(next.models);
+      setRemoved(next.removed);
       setLastSync(next.summary);
       const failed = next.summary.results.filter((entry) => entry.error);
       const detail = `${formatNumber(next.summary.created)} new, ${formatNumber(next.summary.updated)} refreshed`;
@@ -386,20 +441,24 @@ export function AdminModels({
         )}
       </Card>
 
+      {removed.length > 0 ? (
+        <RemovedModels
+          rows={removed}
+          restoringId={restoringId}
+          onRestore={(row) => void restore(row)}
+        />
+      ) : null}
+
       {editing ? (
         <ModelEditor
           row={editing}
           models={models}
           saving={savingId === editing.id}
           onClose={() => setEditing(null)}
-          onDelete={
-            editing.manual
-              ? () => {
-                  setRemoving(editing);
-                  setEditing(null);
-                }
-              : undefined
-          }
+          onDelete={() => {
+            setRemoving(editing);
+            setEditing(null);
+          }}
           onSave={async (patch) => {
             const done = await applyPatch(editing, patch, "Model updated");
             if (done) setEditing(null);
@@ -433,10 +492,17 @@ export function AdminModels({
                 to it by id, so past reporting is unaffected.
               </p>
               <p className="mt-2">
-                {removing.requests > 0
-                  ? `It has served ${formatNumber(removing.requests)} request${removing.requests === 1 ? "" : "s"}. Disabling it instead keeps it visible here.`
-                  : "Only hand-added models can be deleted; a synced row would come back on the next sync."}
+                {removing.manual
+                  ? "Hand-added, so this is final: sync never created it and will not bring it back."
+                  : "It came from sync, so its id is remembered and skipped on future runs. It stays listed under “Removed from catalogue”, where one click puts it back in scope."}
               </p>
+              {removing.requests > 0 ? (
+                <p className="mt-2">
+                  It has served {formatNumber(removing.requests)} request
+                  {removing.requests === 1 ? "" : "s"}. Disabling it instead keeps it visible here
+                  with its history in reach.
+                </p>
+              ) : null}
             </>
           ) : null
         }
@@ -446,12 +512,80 @@ export function AdminModels({
 }
 
 /**
+ * Ids an operator deleted that sync would otherwise recreate.
+ *
+ * Shown because a suppression is invisible everywhere else: the row is gone from the table, and
+ * without this list the only symptom would be a model the upstream clearly offers never appearing.
+ * Restoring lifts the block; it does not recreate the row, because the prices and context window
+ * belong to the upstream and are re-read on the next sync.
+ *
+ * Absent entirely when nothing is suppressed — an empty panel would suggest an operator has
+ * something to do here.
+ */
+function RemovedModels({
+  rows,
+  restoringId,
+  onRestore,
+}: {
+  rows: RemovedModelRow[];
+  restoringId: string | null;
+  onRestore: (row: RemovedModelRow) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader
+        title="Removed from catalogue"
+        description="Synced ids an admin deleted. Sync skips them, so they stay gone until restored — restoring lets the next sync fetch the model again with the upstream's current pricing."
+      />
+      <TableWrap>
+        <thead>
+          <tr>
+            <Th>Model</Th>
+            <Th>Provider</Th>
+            <Th align="right">Removed</Th>
+            <Th align="right">Restore</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <Tr key={row.id}>
+              <Td>
+                <div className="min-w-0">
+                  {row.name ? <p className="truncate text-ink">{row.name}</p> : null}
+                  <p className="numeric truncate text-[11px] text-ink-faint">{row.modelId}</p>
+                </div>
+              </Td>
+              <Td>{titleCase(row.provider)}</Td>
+              <Td align="right" className="numeric text-[11px] text-ink-muted">
+                {formatDateTime(row.removedAt)}
+              </Td>
+              <Td align="right">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={restoringId === row.id}
+                  onClick={() => onRestore(row)}
+                >
+                  Restore
+                </Button>
+              </Td>
+            </Tr>
+          ))}
+        </tbody>
+      </TableWrap>
+    </Card>
+  );
+}
+
+/**
  * What the last sync actually did, per provider. Worth showing rather than collapsing into a
  * toast: `stale` rows (in the catalogue, no longer offered upstream) are left enabled on
  * purpose, so an operator needs to see them to decide whether to disable them by hand.
  *
  * `preserved` counts hand-added rows the upstream also lists. Sync leaves those alone, so an
- * operator can see that the id and prices they typed were not quietly replaced.
+ * operator can see that the id and prices they typed were not quietly replaced. `suppressed`
+ * counts ids the upstream offers that an admin deleted — reported so a model missing from the
+ * catalogue on purpose does not read as a sync that lost it.
  */
 function SyncReport({ summary }: { summary: SyncSummary }) {
   return (
@@ -469,6 +603,9 @@ function SyncReport({ summary }: { summary: SyncSummary }) {
                 {formatNumber(entry.updated)} refreshed
                 {entry.preserved > 0
                   ? ` · ${formatNumber(entry.preserved)} hand-added, left as typed`
+                  : ""}
+                {entry.suppressed > 0
+                  ? ` · ${formatNumber(entry.suppressed)} skipped, deleted here`
                   : ""}
                 {entry.stale.length > 0
                   ? ` · ${formatNumber(entry.stale.length)} no longer offered: ${entry.stale.join(", ")}`
